@@ -27,8 +27,9 @@ Error ทุก handler: `{ "error": "ข้อความ" }` ยกเว้�
 | POST | /api/admin/games | Admin | Game body -> id |
 | PUT | /api/admin/games/{id} | Admin | Game body -> id |
 | DELETE | /api/admin/games/{id} | Admin | ok; ลบ favorites ที่อ้างอิงด้วย cascade |
+| GET | /api/admin/sync/status | Admin | `{ "steamConfigured": true/false }`; presence only, never exposes key; no-store |
 | POST | /api/admin/sync | Admin | imported,note; RAWG first page 40 |
-| POST | /api/admin/sync/steam | Admin | imported,note; Steam New Releases up to 12 eligible games, no RAWG key |
+| POST | /api/admin/sync/steam | Admin | imported,nextAppId,hasMore,note; Steam keyed catalog batch, up to 12 candidates; optional ?after=AppID |
 
 Member includes Admin. No endpoint accepts member_id from frontend for ownership.
 
@@ -45,7 +46,11 @@ Game create example:
 ```
 Game response adds id, optional rawgId, matchScore, optional reasons. On PUT backend uses path id; role/owner never inferred from client body. Image URL if supplied must be HTTPS.
 
-Steam responses also include `steamId`, ISO `releaseDate` (YYYY-MM-DD), and `syncedAt` (UTC timestamp). Catalog sorts release date descending, then id, with undated manual/RAWG records last. Steam sync reads the public Store New Releases feed for Thailand/English, inspects at most 20 candidates, and imports at most 12 released full games with valid Steam image/date and Store tags. Excludes DLC, coming-soon/future/ambiguous dates, missing tag pages and explicit sexual-content tags. Generic multiplayer never becomes co-op. HTML descriptions are converted to text; React never renders unsafe HTML. These public Store endpoints are not a documented/versioned Steamworks contract, so parsing/upstream failures return 502 and retain existing data. All writes use one transaction and unique steam_id; existing descriptions/publication are preserved. Sync is manual, not scheduled, and does not claim all new releases worldwide.
+Steam responses also include `steamId`, ISO `releaseDate` (YYYY-MM-DD), and `syncedAt` (UTC timestamp). Catalog browsing retains its existing sort. Admin imports use `STEAM_API_KEY` to call the official `https://api.steampowered.com/IStoreService/GetAppList/v1/`, with a URL-encoded `input_json` for game-only filtering, `max_results: 12`, and `last_appid`. The key is sent in the `x-webapi-key` header and never returned to the browser, placed in request URLs, or forwarded to Steam Store. API redirects are rejected.
+
+`POST /api/admin/sync/steam?after=500` starts after AppID 500 (optional uint32, default 0). Response: `{ "imported": 2, "nextAppId": 512, "hasMore": true, "note": "..." }`. AppIDs are ordered numerically; this does not mean newest releases. The client continues from `nextAppId` only after success. A batch containing only skipped entries returns 200 with zero imports and an advanced cursor. An empty final page returns `hasMore: false`. Failed imports return no advanced cursor, so retries use the same batch. Restarting from zero updates existing games without duplicates.
+
+Details, release dates, images, genres, and categories come from Store `appdetails`; preference tags come from the Store page. These public Store endpoints are not a documented/versioned Steamworks contract. Skip unavailable or unreleased games, DLC, software, ambiguous/future dates, missing tags, and explicit sexual-content tags. Generic multiplayer never becomes co-op. HTML descriptions are converted to text. Upstream/parse failures return 502 and retain existing data. All writes use one transaction and unique steam_id; existing descriptions/publication are preserved. Sync is manual, not scheduled. `GET /api/admin/sync/status` reports key configuration presence only and requires Admin authorization. Missing STEAM_API_KEY returns 503 before any upstream request. Legacy RAWG routes remain for API compatibility but are not used by the Admin UI.
 
 HTTP: 400 validation, 401 missing/expired/revoked token, 403 wrong role/origin, 404 missing record, 409 duplicate/concurrent operation, 500 DB failure, 502 upstream failure, 503 RAWG key missing/DB unavailable.
 

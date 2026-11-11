@@ -25,6 +25,7 @@ import (
 type API struct {
 	S               *store.Store
 	Secret, RawgKey string
+	SteamKey        string
 	SyncMu          sync.Mutex
 	RawgClient      *http.Client
 	SteamClient     *http.Client
@@ -140,6 +141,7 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("POST /api/admin/games", a.Guard(true, a.SaveGame))
 	m.HandleFunc("PUT /api/admin/games/{id}", a.Guard(true, a.SaveGame))
 	m.HandleFunc("DELETE /api/admin/games/{id}", a.Guard(true, a.DeleteGame))
+	m.HandleFunc("GET /api/admin/sync/status", a.Guard(true, a.SyncStatus))
 	m.HandleFunc("POST /api/admin/sync", a.Guard(true, a.Sync))
 	m.HandleFunc("POST /api/admin/sync/steam", a.Guard(true, a.SyncSteam))
 	return m
@@ -461,8 +463,15 @@ func (a *API) DeleteGame(w http.ResponseWriter, r *http.Request) {
 	}
 	send(w, 200, map[string]bool{"ok": true})
 }
+
+// SyncStatus reports configuration presence only; it never returns the key.
+func (a *API) SyncStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	send(w, http.StatusOK, map[string]bool{"steamConfigured": strings.TrimSpace(a.SteamKey) != ""})
+}
+
 func (a *API) Sync(w http.ResponseWriter, r *http.Request) {
-	if a.RawgKey == "" {
+	if strings.TrimSpace(a.RawgKey) == "" {
 		fail(w, 503, "ยังไม่ได้ตั้ง RAWG_API_KEY บน Backend")
 		return
 	}

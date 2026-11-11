@@ -21,7 +21,7 @@ func steamResponse(id int64, kind, date string, soon bool) string {
 func steamClient(feed *string, detail func(int64) string, page *string) *http.Client {
 	return &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		body := *page
-		if r.URL.Path == "/api/featuredcategories/" {
+		if r.URL.Path == "/IStoreService/GetAppList/v1/" {
 			body = *feed
 		}
 		if r.URL.Path == "/api/appdetails" {
@@ -33,7 +33,7 @@ func steamClient(feed *string, detail func(int64) string, page *string) *http.Cl
 }
 
 func TestSteamRejectsUnreleasedNonGameAndMissingTags(t *testing.T) {
-	feed := `{"new_releases":{"items":[{"id":501}]}}`
+	feed := `{"response":{"apps":[{"appid":501}]}}`
 	for _, tc := range []struct {
 		name, kind, date, page string
 		soon                   bool
@@ -46,27 +46,27 @@ func TestSteamRejectsUnreleasedNonGameAndMissingTags(t *testing.T) {
 		{"explicit catalog tag", "game", "Jan 1, 2020", `<a class="app_tag">Sexual Content</a>`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			a := &handler.API{SteamClient: steamClient(&feed, func(id int64) string { return steamResponse(id, tc.kind, tc.date, tc.soon) }, &tc.page)}
+			a := &handler.API{SteamKey: "test-steam-key", SteamClient: steamClient(&feed, func(id int64) string { return steamResponse(id, tc.kind, tc.date, tc.soon) }, &tc.page)}
 			w := httptest.NewRecorder()
 			a.SyncSteam(w, httptest.NewRequest("POST", "/api/admin/sync/steam", nil))
-			if w.Code != 502 {
-				t.Fatalf("want 502, got %d", w.Code)
+			if w.Code != 200 || !strings.Contains(w.Body.String(), `"imported":0`) {
+				t.Fatalf("want a skipped batch, got %d", w.Code)
 			}
 		})
 	}
 }
 
 func TestSteamRejectsBadFeedAndConcurrentImport(t *testing.T) {
-	for _, body := range []string{`{}`, `{"new_releases":{"items":[]}}`, `not JSON`} {
+	for _, body := range []string{`{}`, `{"response":{"apps":null}}`, `not JSON`} {
 		page := ""
-		a := &handler.API{SteamClient: steamClient(&body, func(int64) string { return "" }, &page)}
+		a := &handler.API{SteamKey: "test-steam-key", SteamClient: steamClient(&body, func(int64) string { return "" }, &page)}
 		w := httptest.NewRecorder()
 		a.SyncSteam(w, httptest.NewRequest("POST", "/api/admin/sync/steam", nil))
 		if w.Code != 502 {
 			t.Fatal(w.Code)
 		}
 	}
-	a := &handler.API{}
+	a := &handler.API{SteamKey: "test-steam-key"}
 	a.SyncMu.Lock()
 	defer a.SyncMu.Unlock()
 	w := httptest.NewRecorder()
@@ -78,15 +78,22 @@ func TestSteamRejectsBadFeedAndConcurrentImport(t *testing.T) {
 
 func TestDatabaseSteamSyncMetadataPreservationAndRollback(t *testing.T) {
 	a, server := databaseAPI(t)
+	a.SteamKey = "test-steam-key"
 	ctx := context.Background()
 	id := registerMember(t, server, "steam-admin@example.test")
 	token := loginMember(t, server, "steam-admin@example.test", "Password123!")
 	requestJSON(t, server, "POST", "/api/admin/sync/steam", "", nil, 401, nil)
 	requestJSON(t, server, "POST", "/api/admin/sync/steam", token, nil, 403, nil)
+	requestJSON(t, server, "GET", "/api/admin/sync/status", token, nil, 403, nil)
 	if _, err := a.S.DB.Exec(ctx, `UPDATE gm_members SET role='admin' WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}
-	feed := `{"new_releases":{"items":[{"id":501,"large_capsule_image":"https://cdn.steamstatic.com/capsule_616x353.jpg"},{"id":502}]}}`
+	var status map[string]bool
+	requestJSON(t, server, "GET", "/api/admin/sync/status", token, nil, 200, &status)
+	if len(status) != 1 || !status["steamConfigured"] {
+		t.Fatal("invalid Steam status")
+	}
+	feed := `{"response":{"apps":[{"appid":501},{"appid":502}]}}`
 	page := `<a class="app_tag">Story Rich</a>`
 	a.SteamClient = steamClient(&feed, func(id int64) string { return steamResponse(id, "game", "Jan 1, 2020", false) }, &page)
 	if _, err := a.S.DB.Exec(ctx, `INSERT INTO gm_games(steam_id,title,description,is_published) VALUES(501,'Demo: Original','Admin edit',false)`); err != nil {
@@ -106,8 +113,8 @@ func TestDatabaseSteamSyncMetadataPreservationAndRollback(t *testing.T) {
 		if *g.SteamID == 501 && (g.Description != "Admin edit" || g.Published) {
 			t.Fatal("admin edits overwritten")
 		}
-		if *g.SteamID == 501 && !strings.Contains(g.ImageURL, "capsule_616x353") {
-			t.Fatal("did not prefer the Store capsule")
+		if !strings.Contains(g.ImageURL, "fixture.jpg") {
+			t.Fatal("missing Store image")
 		}
 		if *g.SteamID == 502 && g.Description != "Fixture & plain text" {
 			t.Fatal("Steam HTML was not converted to text")
@@ -128,7 +135,7 @@ func TestDatabaseSteamSyncMetadataPreservationAndRollback(t *testing.T) {
 	if _, err := a.S.DB.Exec(ctx, `CREATE FUNCTION reject_steam_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.steam_id=503 THEN RAISE EXCEPTION 'intentional Steam QA rollback'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_steam BEFORE INSERT ON gm_games FOR EACH ROW EXECUTE FUNCTION reject_steam_fixture();`); err != nil {
 		t.Fatal(err)
 	}
-	feed = `{"new_releases":{"items":[{"id":503},{"id":504}]}}`
+	feed = `{"response":{"apps":[{"appid":503},{"appid":504}]}}`
 	requestJSON(t, server, "POST", "/api/admin/sync/steam", token, nil, 500, nil)
 	var count int
 	if err := a.S.DB.QueryRow(ctx, `SELECT count(*) FROM gm_games`).Scan(&count); err != nil || count != 2 {

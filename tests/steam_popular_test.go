@@ -29,15 +29,15 @@ func popularClient() *http.Client {
 }
 
 func TestSteamRejectsSoftwareEvenWhenStoreTypeIsGame(t *testing.T) {
-	feed := `{"new_releases":{"items":[{"id":501}]}}`
+	feed := `{"response":{"apps":[{"appid":501}]}}`
 	page := `<a class="app_tag">Casual</a>`
-	a := &handler.API{SteamClient: steamClient(&feed, func(id int64) string {
+	a := &handler.API{SteamKey: "test-steam-key", SteamClient: steamClient(&feed, func(id int64) string {
 		return strings.ReplaceAll(steamResponse(id, "game", "Jan 1, 2020", false), "RPG", "Utilities")
 	}, &page)}
 	w := httptest.NewRecorder()
 	a.SyncSteam(w, httptest.NewRequest("POST", "/api/admin/sync/steam", nil))
-	if w.Code != 502 {
-		t.Fatal("software should not reach the database")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"imported":0`) {
+		t.Fatal("software should be skipped without reaching the database")
 	}
 }
 

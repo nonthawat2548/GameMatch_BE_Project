@@ -15,8 +15,8 @@ import (
 	"time"
 )
 
-// Public Store endpoints are not a versioned Steamworks API contract.
-// A failed fetch/parse leaves the previous catalog intact. No API key is needed.
+// Catalog IDs come from the keyed Steam Web API; details and tags use public Store endpoints.
+// A failed fetch/parse leaves the previous catalog intact.
 const steamStore = "https://store.steampowered.com"
 const steamLimit = 12
 
@@ -138,7 +138,72 @@ func steamGame(detail steamDetail, page []byte) (store.Game, bool) {
 	return store.Game{SteamID: &detail.ID, Title: detail.Name, Description: html.UnescapeString(htmlTagPattern.ReplaceAllString(detail.Description, "")), ImageURL: detail.Image, Genres: genres, Tags: tags, Platforms: platforms, Published: true, ReleaseDate: date}, true
 }
 
+type steamApp struct {
+	ID int64 `json:"appid"`
+}
+
+// Steam Web API credentials are sent only to this fixed HTTPS host, never to the Store.
+func steamAppList(ctx context.Context, client *http.Client, key string, after uint32) ([]steamApp, bool, error) {
+	input, _ := json.Marshal(map[string]any{
+		"last_appid": after, "max_results": steamLimit,
+		"include_games": true, "include_dlc": false, "include_software": false,
+		"include_videos": false, "include_hardware": false,
+	})
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.steampowered.com/IStoreService/GetAppList/v1/?"+url.Values{"input_json": {string(input)}}.Encode(), nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("cannot create Steam API request")
+	}
+	req.Header.Set("x-webapi-key", strings.TrimSpace(key))
+	webClient := *client
+	webClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	res, err := webClient.Do(req)
+	if err != nil {
+		return nil, false, fmt.Errorf("Steam Web API unavailable")
+	}
+	defer res.Body.Close()
+	if res.StatusCode == 401 || res.StatusCode == 403 {
+		return nil, false, fmt.Errorf("Steam ปฏิเสธ API key กรุณาตรวจสอบ STEAM_API_KEY")
+	}
+	if res.StatusCode != 200 {
+		return nil, false, fmt.Errorf("Steam Web API ตอบกลับสถานะ %d ลองใหม่ภายหลัง", res.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(res.Body, (1<<20)+1))
+	var result struct {
+		Response struct {
+			Apps []steamApp `json:"apps"`
+			More bool       `json:"have_more_results"`
+		} `json:"response"`
+	}
+	if err != nil || len(data) > 1<<20 || json.Unmarshal(data, &result) != nil || result.Response.Apps == nil || len(result.Response.Apps) > steamLimit {
+		return nil, false, fmt.Errorf("รูปแบบรายชื่อเกมจาก Steam Web API ไม่ถูกต้อง")
+	}
+	previous := int64(after)
+	for _, app := range result.Response.Apps {
+		if app.ID <= previous || app.ID > int64(^uint32(0)) {
+			return nil, false, fmt.Errorf("ลำดับ AppID จาก Steam Web API ไม่ถูกต้อง")
+		}
+		previous = app.ID
+	}
+	if result.Response.More && len(result.Response.Apps) == 0 {
+		return nil, false, fmt.Errorf("Steam Web API ไม่ส่งข้อมูลสำหรับหน้าถัดไป")
+	}
+	return result.Response.Apps, result.Response.More, nil
+}
+
 func (a *API) SyncSteam(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(a.SteamKey) == "" {
+		fail(w, 503, "ยังไม่ได้ตั้ง STEAM_API_KEY บน Backend")
+		return
+	}
+	var after uint32
+	if value := r.URL.Query().Get("after"); value != "" {
+		parsed, err := strconv.ParseUint(value, 10, 32)
+		if err != nil {
+			fail(w, 400, "after ต้องเป็น AppID จำนวนเต็มบวกหรือศูนย์")
+			return
+		}
+		after = uint32(parsed)
+	}
 	if !a.SyncMu.TryLock() {
 		fail(w, 409, "กำลังอัปเดตข้อมูลอยู่")
 		return
@@ -150,29 +215,15 @@ func (a *API) SyncSteam(w http.ResponseWriter, r *http.Request) {
 	if client == nil {
 		client = &http.Client{Timeout: 8 * time.Second}
 	}
-	feed, err := steamFetch(ctx, client, "/api/featuredcategories/?cc=th&l=english")
-	var catalog struct {
-		NewReleases struct {
-			Items []struct {
-				ID    int64  `json:"id"`
-				Image string `json:"large_capsule_image"`
-			} `json:"items"`
-		} `json:"new_releases"`
-	}
-	if err != nil || json.Unmarshal(feed, &catalog) != nil || len(catalog.NewReleases.Items) == 0 || len(catalog.NewReleases.Items) > 100 {
-		fail(w, 502, "โหลดรายการเกมออกใหม่จาก Steam ไม่สำเร็จ ลองใหม่ภายหลัง")
+	items, more, err := steamAppList(ctx, client, a.SteamKey, after)
+	if err != nil {
+		fail(w, 502, err.Error())
 		return
 	}
 	games := []store.Game{}
-	seen := map[int64]bool{}
-	for index, item := range catalog.NewReleases.Items {
-		if len(games) >= steamLimit || index >= 20 {
-			break
-		}
-		if item.ID <= 0 || seen[item.ID] {
-			continue
-		}
-		seen[item.ID] = true
+	next := after
+	for _, item := range items {
+		next = uint32(item.ID)
 		id := strconv.FormatInt(item.ID, 10)
 		data, err := steamFetch(ctx, client, "/api/appdetails?appids="+id+"&cc=th&l=english")
 		var response map[string]struct {
@@ -184,15 +235,15 @@ func (a *API) SyncSteam(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		entry, ok := response[id]
-		if !ok || !entry.Success {
+		if !ok {
 			fail(w, 502, "Steam ยังไม่ส่งข้อมูลเกมครบ ข้อมูลเดิมยังอยู่")
 			return
 		}
-		if entry.Data.ID != item.ID || entry.Data.Type != "game" || entry.Data.Release.Soon {
+		if !entry.Success {
 			continue
 		}
-		if item.Image != "" {
-			entry.Data.Image = item.Image // Store capsule fits the landscape card without cutting header logos.
+		if entry.Data.ID != item.ID || entry.Data.Type != "game" || entry.Data.Release.Soon {
+			continue
 		}
 		page, err := steamFetch(ctx, client, "/app/"+id+"/?l=english&cc=th")
 		if err != nil {
@@ -204,7 +255,7 @@ func (a *API) SyncSteam(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(games) == 0 {
-		fail(w, 502, "ยังไม่มีข้อมูลเกมออกใหม่พร้อมภาพที่ตรวจสอบได้ ข้อมูลเดิมยังอยู่")
+		send(w, 200, map[string]any{"imported": 0, "nextAppId": next, "hasMore": more, "note": "ไม่มีเกมที่ผ่านเงื่อนไขในชุดนี้"})
 		return
 	}
 	tx, err := a.S.DB.Begin(ctx)
@@ -225,5 +276,5 @@ func (a *API) SyncSteam(w http.ResponseWriter, r *http.Request) {
 		dbError(w, err)
 		return
 	}
-	send(w, 200, map[string]any{"imported": len(games), "note": "อัปเดตจาก Steam New Releases แล้ว คงคำอธิบายและสถานะเผยแพร่ที่ผู้ดูแลแก้ไว้"})
+	send(w, 200, map[string]any{"imported": len(games), "nextAppId": next, "hasMore": more, "note": "นำเข้าจาก Steam Web API และ Steam Store แล้ว คงคำอธิบายและสถานะเผยแพร่ที่ผู้ดูแลแก้ไว้"})
 }

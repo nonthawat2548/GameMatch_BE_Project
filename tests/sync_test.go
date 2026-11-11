@@ -50,3 +50,27 @@ func TestSyncRejectsBadUpstreamBeforeDatabase(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncStatusDoesNotExposeKey(t *testing.T) {
+	for _, key := range []string{"", "   ", "private-test-key"} {
+		a := &handler.API{SteamKey: key}
+		w := httptest.NewRecorder()
+		a.SyncStatus(w, httptest.NewRequest("GET", "/api/admin/sync/status", nil))
+		expected := "{\"steamConfigured\":false}\n"
+		if strings.TrimSpace(key) != "" {
+			expected = "{\"steamConfigured\":true}\n"
+		}
+		if w.Code != 200 || w.Body.String() != expected || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("unexpected status response: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestSyncStatusRequiresAuthentication(t *testing.T) {
+	a := &handler.API{Secret: "test-secret-at-least-32-characters", SteamKey: "private-test-key"}
+	w := httptest.NewRecorder()
+	a.Routes().ServeHTTP(w, httptest.NewRequest("GET", "/api/admin/sync/status", nil))
+	if w.Code != 401 {
+		t.Fatalf("want 401 got %d", w.Code)
+	}
+}

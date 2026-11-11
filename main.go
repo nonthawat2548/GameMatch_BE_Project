@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"gamematch/config"
 	"gamematch/handler"
 	"gamematch/mw"
 	"gamematch/store"
@@ -11,11 +12,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
 
 func main() {
+	if err := config.LoadEnv(".env"); err != nil {
+		log.Fatal("Cannot load .env: check file permissions and syntax")
+	}
 	secret := os.Getenv("JWT_SECRET")
 	if len(secret) < 32 {
 		log.Fatal("JWT_SECRET must contain at least 32 characters")
@@ -40,7 +45,7 @@ func main() {
 	if e = db.Ping(ctx); e != nil {
 		log.Fatal("Cannot connect to PostgreSQL: check DATABASE_URL and SSL")
 	}
-	a := &handler.API{S: &store.Store{DB: db}, Secret: secret, RawgKey: os.Getenv("RAWG_API_KEY")}
+	a := &handler.API{S: &store.Store{DB: db}, Secret: secret, RawgKey: strings.TrimSpace(os.Getenv("RAWG_API_KEY")), SteamKey: strings.TrimSpace(os.Getenv("STEAM_API_KEY"))}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

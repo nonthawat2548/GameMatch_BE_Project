@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"gamematch/config"
 	"gamematch/handler"
 	"gamematch/store"
 	"log"
@@ -13,6 +14,9 @@ import (
 )
 
 func main() {
+	if err := config.LoadEnv(".env"); err != nil {
+		log.Fatal("Cannot load .env: check file permissions and syntax")
+	}
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" || strings.Contains(dsn, "ewfvqtflucuvtiajmmgb") {
 		log.Fatal("Set the dedicated GameMatch DATABASE_URL; MovieHub is not allowed")

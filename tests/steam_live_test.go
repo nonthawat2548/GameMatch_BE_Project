@@ -29,7 +29,7 @@ func TestLiveSteamImport(t *testing.T) {
 		t.Fatal("invalid database configuration")
 	}
 	defer db.Close()
-	a := &handler.API{S: &store.Store{DB: db}}
+	a := &handler.API{S: &store.Store{DB: db}, SteamKey: os.Getenv("STEAM_API_KEY")}
 	w := httptest.NewRecorder()
 	a.SyncSteam(w, httptest.NewRequest("POST", "/api/admin/sync/steam", nil))
 	t.Log(w.Body.String())
