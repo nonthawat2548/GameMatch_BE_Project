@@ -1,0 +1,12 @@
+node_modules/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+*.exe
+server
+.DS_Store
+.tools/
+.cache/
+.vercel/
