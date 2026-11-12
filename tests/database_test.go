@@ -490,8 +490,9 @@ func TestSteamRatingUsesPublishedGameAndSteamSummary(t *testing.T) {
 	calls:=0
 	a.SteamClient=&http.Client{Transport:roundTripFunc(func(r *http.Request)(*http.Response,error){
 		calls++
-		if r.URL.Host!="store.steampowered.com" || r.URL.Path!="/appreviews/730" || r.URL.Query().Get("purchase_type")!="steam" || r.URL.Query().Get("language")!="all" || r.URL.Query().Get("num_per_page")!="1" {t.Fatalf("unexpected request: %s",r.URL)}
-		return &http.Response{StatusCode:200,Body:io.NopCloser(strings.NewReader(`{"success":1,"query_summary":{"total_positive":90,"total_negative":10,"total_reviews":100,"review_score":8,"review_score_desc":"Very Positive"},"reviews":[{"review":"private fixture"}]}`)),Header:make(http.Header)},nil
+		var input struct { AppID int64 `json:"appid"`; PurchaseType int `json:"purchase_type"`; Languages []string `json:"languages"`; NumPerPage int `json:"num_per_page"` }
+		if r.URL.Host!="api.steampowered.com" || r.URL.Path!="/IUserReviewsService/GetAppReviews/v1/" || json.Unmarshal([]byte(r.URL.Query().Get("input_json")),&input)!=nil || input.AppID!=730 || input.PurchaseType!=0 || len(input.Languages)!=1 || input.Languages[0]!="all" || input.NumPerPage!=1 {t.Fatalf("unexpected request: %s",r.URL)}
+		return &http.Response{StatusCode:200,Body:io.NopCloser(strings.NewReader(`{"response":{"query_summary":{"total_positive":90,"total_negative":10,"total_reviews":100,"review_score":8,"review_score_desc":"Very Positive"},"reviews":[{"review":"private fixture"}]}}`)),Header:make(http.Header)},nil
 	})}
 	path:="/api/games/"+strconv.FormatInt(id,10)+"/steam-rating"
 	var rating handler.SteamReviewSummary

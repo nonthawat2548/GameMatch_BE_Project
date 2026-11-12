@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"io"
 	"strconv"
 	"time"
 )
@@ -20,21 +22,24 @@ type SteamReviewSummary struct {
 	PositivePercent *int `json:"positivePercent"`
 }
 
+type steamReviewCounts struct {
+	Positive *int64 `json:"total_positive"`
+	Negative *int64 `json:"total_negative"`
+	Total *int64 `json:"total_reviews"`
+	Score int `json:"review_score"`
+	Description string `json:"review_score_desc"`
+}
+
 func parseSteamReviewSummary(data []byte) (SteamReviewSummary, error) {
-	var response struct {
-		Success int `json:"success"`
-		Summary *struct {
-			Positive *int64 `json:"total_positive"`
-			Negative *int64 `json:"total_negative"`
-			Total *int64 `json:"total_reviews"`
-			Score int `json:"review_score"`
-			Description string `json:"review_score_desc"`
-		} `json:"query_summary"`
+	var envelope struct {
+		Response *struct {
+			Summary *steamReviewCounts `json:"query_summary"`
+		} `json:"response"`
 	}
-	if err := json.Unmarshal(data, &response); err != nil || response.Success != 1 || response.Summary == nil {
+	if err := json.Unmarshal(data, &envelope); err != nil || envelope.Response == nil || envelope.Response.Summary == nil {
 		return SteamReviewSummary{}, fmt.Errorf("invalid Steam review response")
 	}
-	s := response.Summary
+	s := envelope.Response.Summary
 	if s.Positive == nil || s.Negative == nil || s.Total == nil ||
 		*s.Positive < 0 || *s.Negative < 0 || *s.Total < 0 ||
 		*s.Total > (1<<63-1)/100 || *s.Positive > *s.Total || *s.Negative != *s.Total - *s.Positive ||
@@ -62,10 +67,33 @@ func (a *API) SteamRating(w http.ResponseWriter, r *http.Request) {
 	if client == nil { client = &http.Client{Timeout:8*time.Second} }
 	// Match Steam's default purchase filter; all languages and all review types.
 	// Only request one review, and return summary counts (never user identities/text).
-	data,err := steamFetch(ctx,client,"/appreviews/"+strconv.FormatInt(*appID,10)+"?json=1&filter=all&language=all&review_type=all&purchase_type=steam&num_per_page=1&cursor=%2A")
+	data,err := fetchSteamReviewSummary(ctx,client,*appID)
 	if err != nil { fail(w,502,"โหลดคะแนนจาก Steam ไม่สำเร็จ"); return }
 	summary,err := parseSteamReviewSummary(data)
 	if err != nil { fail(w,502,"Steam ยังไม่ส่งข้อมูลคะแนนที่สมบูรณ์"); return }
 	w.Header().Set("Cache-Control","private, max-age=600")
 	send(w,200,summary)
+}
+
+// GetAppReviews replaces the deprecated store /appreviews endpoint.
+// No publisher key is needed for public review summaries.
+func fetchSteamReviewSummary(ctx context.Context, client *http.Client, appID int64) ([]byte,error) {
+	input,err:=json.Marshal(map[string]any{
+		"appid":appID,"filter":1,"languages":[]string{"all"},
+		"review_type":0,"purchase_type":0,"num_per_page":1,
+		"filter_offtopic_activity":true,"display_language":"english",
+	})
+	if err!=nil {return nil,err}
+	q:=url.Values{"input_json":[]string{string(input)}}
+	req,err:=http.NewRequestWithContext(ctx,http.MethodGet,"https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/?"+q.Encode(),nil)
+	if err!=nil{return nil,err}
+	req.Header.Set("User-Agent","GameMatch/1.0 (student game catalog)")
+	req.Header.Set("Accept","application/json")
+	res,err:=client.Do(req)
+	if err!=nil{return nil,err}
+	defer res.Body.Close()
+	if res.StatusCode!=http.StatusOK{return nil,fmt.Errorf("Steam review status %d",res.StatusCode)}
+	data,err:=io.ReadAll(io.LimitReader(res.Body,(4<<20)+1))
+	if err!=nil||len(data)>4<<20{return nil,fmt.Errorf("invalid Steam review response size")}
+	return data,nil
 }

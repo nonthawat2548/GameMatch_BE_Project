@@ -114,3 +114,5 @@ Genre JSON remains an array of slugs. PostgreSQL now stores the normalized many-
 - GET /api/games/{id}/trailers: public, published games only. Reads Steam movie metadata for the game's stored Steam ID; returns an array of {id,title,sources,preview}. Native MP4/WebM where available, official microtrailers for modern adaptive assets, empty for no Steam ID or no compatible clips. 502 for upstream failures. No video proxy or new dependency.
 
 - GET /api/games/{id}/steam-rating: public, published games only. Fetches Steam review summary (all languages, all review types, Steam purchase filter, default off-topic exclusion). Returns positive, negative, total, Steam score and description, and calculated whole positivePercent (null for no reviews). Returns null for games without Steam ID, 502 on upstream errors. No Steam reviewer identity or review text is returned. This is independent of GameMatch reviews and matching scores.
+
+Steam rating uses the current Steamworks IUserReviewsService/GetAppReviews/v1 endpoint, with input_json and response.query_summary; the deprecated store appreviews endpoint is no longer used.
