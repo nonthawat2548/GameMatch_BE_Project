@@ -258,21 +258,7 @@ func (a *API) SyncSteam(w http.ResponseWriter, r *http.Request) {
 		send(w, 200, map[string]any{"imported": 0, "nextAppId": next, "hasMore": more, "note": "ไม่มีเกมที่ผ่านเงื่อนไขในชุดนี้"})
 		return
 	}
-	tx, err := a.S.DB.Begin(ctx)
-	if err != nil {
-		dbError(w, err)
-		return
-	}
-	defer tx.Rollback(ctx)
-	for i := len(games) - 1; i >= 0; i-- {
-		g := games[i]
-		_, err = tx.Exec(ctx, `INSERT INTO gm_games(steam_id,title,description,image_url,genres,tags,platforms,release_date,synced_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8::date,now()) ON CONFLICT(steam_id) DO UPDATE SET title=EXCLUDED.title,image_url=EXCLUDED.image_url,genres=EXCLUDED.genres,tags=EXCLUDED.tags,platforms=EXCLUDED.platforms,release_date=EXCLUDED.release_date,synced_at=EXCLUDED.synced_at`, g.SteamID, g.Title, g.Description, g.ImageURL, g.Genres, g.Tags, g.Platforms, g.ReleaseDate)
-		if err != nil {
-			dbError(w, err)
-			return
-		}
-	}
-	if err = tx.Commit(ctx); err != nil {
+	if err = a.S.ImportSteam(ctx, games); err != nil {
 		dbError(w, err)
 		return
 	}

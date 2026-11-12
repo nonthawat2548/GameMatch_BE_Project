@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"gamematch/store"
 	"context"
 	"encoding/json"
 	"io"
@@ -70,13 +71,7 @@ func (a *API) Sync(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "RAWG JSON ไม่ถูกต้อง")
 		return
 	}
-	tx, e := a.S.DB.Begin(ctx)
-	if e != nil {
-		dbError(w, e)
-		return
-	}
-	defer tx.Rollback(ctx)
-	count := 0
+	games := []store.Game{}
 	for _, v := range data.Results {
 		if v.ID <= 0 || v.Name == "" {
 			continue
@@ -91,14 +86,11 @@ func (a *API) Sync(w http.ResponseWriter, r *http.Request) {
 		for _, p := range v.Platforms {
 			platforms = append(platforms, p.Platform.Name)
 		}
-		_, e = tx.Exec(ctx, `INSERT INTO gm_games(rawg_id,title,image_url,genres,tags,platforms) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(rawg_id) DO UPDATE SET title=EXCLUDED.title,image_url=EXCLUDED.image_url,genres=EXCLUDED.genres,tags=EXCLUDED.tags,platforms=EXCLUDED.platforms`, v.ID, v.Name, v.Image, genres, tags, platforms)
-		if e != nil {
-			dbError(w, e)
-			return
-		}
-		count++
+		id := int64(v.ID)
+		games = append(games, store.Game{RawgID: &id, Title: v.Name, ImageURL: v.Image, Genres: genres, Tags: tags, Platforms: platforms})
 	}
-	if e = tx.Commit(ctx); e != nil {
+	count, e := a.S.ImportRAWG(ctx, games)
+	if e != nil {
 		dbError(w, e)
 		return
 	}

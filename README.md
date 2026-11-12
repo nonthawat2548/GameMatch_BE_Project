@@ -55,3 +55,6 @@ Existing hosting used the old combined repo. This transfer does not reconnect Re
 [API contract](docs/API.md) and [test instructions](tests/README.md). Real DB tests require GM_TEST_DATABASE_URL for a dedicated QA role with CREATE SCHEMA permission; otherwise they are explicitly skipped. Passing unit tests alone are not DB evidence. Tests load database/schema.sql and remove only their disposable schemas.
 
 Manual popularity import: go run ./cmd/import-popular, with an explicitly configured GameMatch DATABASE_URL. Admin imports up to 12 Steam catalog candidates per request using STEAM_API_KEY; the popularity CLI remains a separate manual tool. Imports preserve Admin descriptions/publication. Optional live import tests change real catalog data and are opt-in. Historical evidence and limits: [validation](docs/VALIDATION.md).
+
+### Course-aligned structure
+The handler package handles HTTP, validation and response codes. Store files handle SQL: games, members, reviews, favorites/preferences, imports and admin counts. The middleware checks JWT and DB roles. Dependency versions follow week6-lab/moviehub/go.mod. Run go test ./..., go vet ./..., go build ./...; CI uses an isolated PostgreSQL instance.

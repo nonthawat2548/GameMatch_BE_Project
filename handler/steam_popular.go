@@ -136,22 +136,7 @@ func ImportSteamPopular(ctx context.Context, s *store.Store, client *http.Client
 	if len(games) < limit {
 		return 0, fmt.Errorf("only %d/%d eligible games; previous catalog unchanged", len(games), limit)
 	}
-	tx, err := s.DB.Begin(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback(ctx)
-	// Reset ranking metadata only after all requested records have been verified.
-	if _, err = tx.Exec(ctx, `UPDATE gm_games SET popularity_order=NULL,popularity_source=NULL,popularity_updated_at=NULL WHERE popularity_order IS NOT NULL`); err != nil {
-		return 0, err
-	}
-	for _, g := range games {
-		_, err = tx.Exec(ctx, `INSERT INTO gm_games(steam_id,title,description,image_url,genres,tags,platforms,release_date,synced_at,popularity_order,popularity_source,popularity_updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8::date,now(),$9,$10,now()) ON CONFLICT(steam_id) DO UPDATE SET title=EXCLUDED.title,image_url=EXCLUDED.image_url,genres=EXCLUDED.genres,tags=EXCLUDED.tags,platforms=EXCLUDED.platforms,release_date=EXCLUDED.release_date,synced_at=EXCLUDED.synced_at,popularity_order=EXCLUDED.popularity_order,popularity_source=EXCLUDED.popularity_source,popularity_updated_at=EXCLUDED.popularity_updated_at`, g.SteamID, g.Title, g.Description, g.ImageURL, g.Genres, g.Tags, g.Platforms, g.ReleaseDate, g.PopularityOrder, g.PopularitySource)
-		if err != nil {
-			return 0, err
-		}
-	}
-	if err = tx.Commit(ctx); err != nil {
+	if err := s.ImportPopular(ctx, games); err != nil {
 		return 0, err
 	}
 	return len(games), nil

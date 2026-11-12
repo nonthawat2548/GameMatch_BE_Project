@@ -66,7 +66,7 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
-		if a.S.DB.Ping(ctx) != nil {
+		if a.S.Ping(ctx) != nil {
 			fail(w, 503, "Database unavailable")
 			return
 		}

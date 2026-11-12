@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"time"
 )
@@ -35,3 +36,5 @@ type Game struct {
 }
 type Store struct{ DB *pgxpool.Pool }
 
+
+func (s *Store) Ping(ctx context.Context) error { return s.DB.Ping(ctx) }
