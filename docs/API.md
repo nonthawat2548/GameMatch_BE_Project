@@ -110,3 +110,5 @@ JWT ที่ออกหลัง Login มีอายุ 1 ชั่วโม
 - GET /api/admin/stats: Admin only; returns games, published, members, admins, reviews from SQL counts. Backend middleware is now in mw/auth.go and member SQL in store/members.go.
 
 Genre JSON remains an array of slugs. PostgreSQL now stores the normalized many-to-many relation with a position; Store writes the old array and relation atomically. No frontend API contract changes.
+
+- GET /api/games/{id}/trailers: public, published games only. Reads Steam movie metadata for the game's stored Steam ID; returns an array of {id,title,sources,preview}. Native MP4/WebM where available, official microtrailers for modern adaptive assets, empty for no Steam ID or no compatible clips. 502 for upstream failures. No video proxy or new dependency.

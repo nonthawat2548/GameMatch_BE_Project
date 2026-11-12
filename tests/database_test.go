@@ -469,3 +469,15 @@ func TestNormalizedGameGenres(t *testing.T) {
 	if _, err = a.S.DeleteGame(ctx,id); err != nil { t.Fatal(err) }
 	if err = a.S.DB.QueryRow(ctx, "SELECT count(*) FROM gm_game_genres WHERE game_id=$1", id).Scan(&n); err != nil || n != 0 { t.Fatalf("cascade links=%d err=%v",n,err) }
 }
+
+func TestGameTrailerVisibility(t *testing.T) {
+	a, server := databaseAPI(t)
+	id, err := a.S.Save(context.Background(),store.Game{Title:"No external source",Published:true})
+	if err != nil { t.Fatal(err) }
+	var trailers []handler.Trailer
+	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,200,&trailers)
+	if trailers==nil || len(trailers)!=0 { t.Fatalf("expected empty trailer list: %#v",trailers) }
+	if _,err=a.S.DB.Exec(context.Background(),"UPDATE gm_games SET is_published=false WHERE id=$1",id); err!=nil { t.Fatal(err) }
+	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,404,nil)
+	requestJSON(t,server,"GET","/api/games/invalid/trailers","",nil,400,nil)
+}

@@ -51,3 +51,9 @@ func (s *Store) DeleteGame(ctx context.Context, id int64) (bool, error) {
 	result, err := s.DB.Exec(ctx, `DELETE FROM gm_games WHERE id=$1`, id)
 	return result.RowsAffected() > 0, err
 }
+
+func (s *Store) PublishedGameSteamID(ctx context.Context, id int64) (*int64, error) {
+	var steamID *int64
+	err := s.DB.QueryRow(ctx, `SELECT steam_id FROM gm_games WHERE id=$1 AND is_published`, id).Scan(&steamID)
+	return steamID, err
+}

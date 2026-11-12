@@ -81,6 +81,7 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("PUT /api/me/password", a.Guard(false, a.Password))
 	m.HandleFunc("GET /api/games", a.Games)
 	m.HandleFunc("GET /api/games/{id}", a.Detail)
+	m.HandleFunc("GET /api/games/{id}/trailers", a.GameTrailers)
 	m.HandleFunc("GET /api/games/{id}/reviews", a.Reviews)
 	m.HandleFunc("POST /api/games/{id}/reviews", a.Guard(false, a.Reviews))
 	m.HandleFunc("PUT /api/games/{id}/reviews/{reviewId}", a.Guard(false, a.Reviews))
