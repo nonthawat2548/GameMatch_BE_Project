@@ -13,7 +13,7 @@ type Claims struct {
 }
 
 func Issue(secret string, id int64, version int) (string, error) {
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{ID: id, Version: version, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(2 * time.Hour)), IssuedAt: jwt.NewNumericDate(time.Now()), Issuer: "gamematch"}}).SignedString([]byte(secret))
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{ID: id, Version: version, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)), IssuedAt: jwt.NewNumericDate(time.Now()), Issuer: "gamematch"}}).SignedString([]byte(secret))
 }
 func Parse(secret, token string) (*Claims, error) {
 	c := &Claims{}

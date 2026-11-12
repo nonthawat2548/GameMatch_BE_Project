@@ -1,6 +1,6 @@
 # GameMatch Backend
 
-Go net/http, explicit handlers, JWT HS256 (2h), bcrypt, middleware, pgxpool and parameterized PostgreSQL SQL. React calls Go; Go connects to Supabase PostgreSQL. Supabase Auth is not used.
+Go net/http, explicit handlers, JWT HS256 (1h), bcrypt, middleware, pgxpool and parameterized PostgreSQL SQL. React calls Go; Go connects to Supabase PostgreSQL. Supabase Auth is not used.
 
 Frontend: https://github.com/nonthawat2548/GameMatch_FE_Project
 

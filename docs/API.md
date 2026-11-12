@@ -100,3 +100,6 @@ Go Guard ตรวจ token/role และ SQL WHERE ตรวจเจ้าข
 - PUT /api/admin/members/{id}/role: body {"role":"admin"} หรือ {"role":"member"}; ส่งสมาชิกที่แก้แล้วกลับมา
 - Guest 401, Member 403, ID/role ไม่ถูกต้องหรือแก้บทบาทตนเอง 400, ไม่พบสมาชิก 404
 - เปลี่ยนบทบาทจริงจะเพิ่ม token_version เพื่อยกเลิก session เดิมของบัญชีเป้าหมาย ต้องเข้าสู่ระบบใหม่; ไม่แก้รหัสผ่านหรือข้อมูลอื่น
+
+### อายุ JWT
+JWT ที่ออกหลัง Login มีอายุ 1 ชั่วโมง (60 นาที) ตามตัวอย่าง MovieHub ใน week6-lab ไม่ใช่ idle timeout และไม่ต่ออายุจากการใช้งาน

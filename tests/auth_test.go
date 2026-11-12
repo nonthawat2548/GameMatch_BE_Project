@@ -35,3 +35,20 @@ func TestRejectUnexpectedSigningMethod(t *testing.T) {
 		t.Fatal("accepted HS384")
 	}
 }
+
+func TestTokenExpiresOneHourAfterIssue(t *testing.T) {
+	token, err := auth.Issue(secret, 42, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := auth.Parse(secret, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.IssuedAt == nil || claims.ExpiresAt == nil {
+		t.Fatal("missing issued-at or expiry")
+	}
+	if got := claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time); got != time.Hour {
+		t.Fatalf("JWT TTL = %v, want %v", got, time.Hour)
+	}
+}
