@@ -88,3 +88,9 @@ GRANT UPDATE (rating, comment) ON public.gm_reviews TO gm_backend;
 GRANT USAGE ON SEQUENCE public.gm_reviews_id_seq TO gm_backend;
 ```
 Go Guard ตรวจ token/role และ SQL WHERE ตรวจเจ้าของทุกครั้ง ไม่รับ memberId จาก body.
+
+### การแนะนำเกมและเกมคล้ายกัน
+- POST /api/recommendations: รับ genre, mode, style ตามเดิม รองรับ 17 ตัวเลือกแนว/แท็ก และส่งผลสูงสุด 10 เกม พร้อม matchBreakdown (label, points, max) จากคะแนน 45/25/30
+- GET /api/games/{id}/similar: Public, เกมคล้ายกันสูงสุด 4 เกมจากแนวและแท็กที่ตรงกัน ไม่รวมเกมต้นทางหรือเกมที่ซ่อน
+- GET /api/me/recommendations: Member/Admin, แนะนำเกมจากรายการโปรดของบัญชีปัจจุบัน ไม่รวมเกมที่บันทึกไว้แล้ว
+- similarityScore คือคะแนนนับความคล้าย (3 ต่อแนว + 1 ต่อแท็ก) ไม่ใช่เปอร์เซ็นต์ความเข้ากัน

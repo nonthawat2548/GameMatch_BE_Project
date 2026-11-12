@@ -145,6 +145,8 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("PUT /api/games/{id}/reviews/{reviewId}", a.Guard(false, a.Reviews))
 	m.HandleFunc("DELETE /api/games/{id}/reviews/{reviewId}", a.Guard(false, a.Reviews))
 	m.HandleFunc("POST /api/recommendations", a.Recommend)
+	m.HandleFunc("GET /api/games/{id}/similar", a.SimilarGames)
+	m.HandleFunc("GET /api/me/recommendations", a.Guard(false, a.Favorites))
 	m.HandleFunc("GET /api/me/favorites", a.Guard(false, a.Favorites))
 	m.HandleFunc("PUT /api/me/favorites/{id}", a.Guard(false, a.Favorite))
 	m.HandleFunc("DELETE /api/me/favorites/{id}", a.Guard(false, a.Favorite))
@@ -435,6 +437,25 @@ func (a *API) Recommend(w http.ResponseWriter, r *http.Request) {
 	}
 	send(w, 200, recommend.Rank(g, p))
 }
+func (a *API) SimilarGames(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		fail(w, 400, "id ไม่ถูกต้อง")
+		return
+	}
+	games, err := a.S.Games(r.Context(), false)
+	if err != nil {
+		dbError(w, err)
+		return
+	}
+	for _, g := range games {
+		if g.ID == id {
+			send(w, 200, recommend.Similar(games, []store.Game{g}))
+			return
+		}
+	}
+	fail(w, 404, "ไม่พบเกม")
+}
 func (a *API) Favorites(w http.ResponseWriter, r *http.Request) {
 	rows, e := a.S.DB.Query(r.Context(), `SELECT game_id FROM gm_favorites WHERE member_id=$1`, current(r).ID)
 	if e != nil {
@@ -467,6 +488,10 @@ func (a *API) Favorites(w http.ResponseWriter, r *http.Request) {
 		if ids[g.ID] {
 			out = append(out, g)
 		}
+	}
+	if r.URL.Path == "/api/me/recommendations" {
+		send(w, 200, recommend.Similar(games, out))
+		return
 	}
 	send(w, 200, out)
 }

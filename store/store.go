@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+type MatchPart struct {
+	Label string `json:"label"`
+	Points int `json:"points"`
+	Max int `json:"max"`
+}
+
 type Game struct {
 	ID                  int64      `json:"id"`
 	RawgID              *int64     `json:"rawgId,omitempty"`
@@ -25,6 +31,8 @@ type Game struct {
 	Published           bool       `json:"isPublished"`
 	Score               int        `json:"matchScore"`
 	Reasons             []string   `json:"reasons,omitempty"`
+	MatchBreakdown      []MatchPart `json:"matchBreakdown,omitempty"`
+	SimilarityScore     int         `json:"similarityScore,omitempty"`
 }
 type Store struct{ DB *pgxpool.Pool }
 
