@@ -94,3 +94,9 @@ Go Guard ตรวจ token/role และ SQL WHERE ตรวจเจ้าข
 - GET /api/games/{id}/similar: Public, เกมคล้ายกันสูงสุด 4 เกมจากแนวและแท็กที่ตรงกัน ไม่รวมเกมต้นทางหรือเกมที่ซ่อน
 - GET /api/me/recommendations: Member/Admin, แนะนำเกมจากรายการโปรดของบัญชีปัจจุบัน ไม่รวมเกมที่บันทึกไว้แล้ว
 - similarityScore คือคะแนนนับความคล้าย (3 ต่อแนว + 1 ต่อแท็ก) ไม่ใช่เปอร์เซ็นต์ความเข้ากัน
+
+### Admin: จัดการสมาชิก (อ้างอิง MovieHub)
+- GET /api/admin/members: รายชื่อสมาชิกทั้งหมด (id, email, username, displayName, role); Admin เท่านั้น
+- PUT /api/admin/members/{id}/role: body {"role":"admin"} หรือ {"role":"member"}; ส่งสมาชิกที่แก้แล้วกลับมา
+- Guest 401, Member 403, ID/role ไม่ถูกต้องหรือแก้บทบาทตนเอง 400, ไม่พบสมาชิก 404
+- เปลี่ยนบทบาทจริงจะเพิ่ม token_version เพื่อยกเลิก session เดิมของบัญชีเป้าหมาย ต้องเข้าสู่ระบบใหม่; ไม่แก้รหัสผ่านหรือข้อมูลอื่น

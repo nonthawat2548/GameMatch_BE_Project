@@ -378,3 +378,58 @@ func TestReviewOwnershipAndLifecycle(t *testing.T) {
 	requestJSON(t, server, "PUT", itemPath, otherToken, changed, 404, nil)
 	requestJSON(t, server, "DELETE", itemPath, otherToken, nil, 200, nil)
 }
+
+func TestAdminMemberRoles(t *testing.T) {
+	a, server := databaseAPI(t)
+	ctx := context.Background()
+	admin := registerMember(t, server, "role-admin@example.test")
+	member := registerMember(t, server, "role-member@example.test")
+	if _, err := a.S.DB.Exec(ctx, "UPDATE gm_members SET role='admin' WHERE id=$1", admin); err != nil {
+		t.Fatal(err)
+	}
+	adminToken := loginMember(t, server, "role-admin@example.test", "Password123!")
+	memberToken := loginMember(t, server, "role-member@example.test", "Password123!")
+	listPath := "/api/admin/members"
+	targetPath := listPath + "/" + strconv.FormatInt(member, 10) + "/role"
+	promote := map[string]string{"role": "admin"}
+	demote := map[string]string{"role": "member"}
+	requestJSON(t, server, "GET", listPath, "", nil, 401, nil)
+	requestJSON(t, server, "GET", listPath, memberToken, nil, 403, nil)
+	requestJSON(t, server, "PUT", targetPath, "", promote, 401, nil)
+	requestJSON(t, server, "PUT", targetPath, memberToken, promote, 403, nil)
+	var items []map[string]any
+	requestJSON(t, server, "GET", listPath, adminToken, nil, 200, &items)
+	if len(items) != 2 {
+		t.Fatal("expected two members")
+	}
+	for _, item := range items {
+		if _, ok := item["passwordHash"]; ok {
+			t.Fatal("password hash leaked")
+		}
+		if _, ok := item["tokenVersion"]; ok {
+			t.Fatal("token version leaked")
+		}
+	}
+	requestJSON(t, server, "PUT", listPath+"/"+strconv.FormatInt(admin, 10)+"/role", adminToken, demote, 400, nil)
+	requestJSON(t, server, "PUT", targetPath, adminToken, map[string]string{"role": "owner"}, 400, nil)
+	requestJSON(t, server, "PUT", listPath+"/999999/role", adminToken, promote, 404, nil)
+	var updated struct{ Role string }
+	requestJSON(t, server, "PUT", targetPath, adminToken, promote, 200, &updated)
+	if updated.Role != "admin" {
+		t.Fatal("promotion failed")
+	}
+	requestJSON(t, server, "GET", "/api/me", memberToken, nil, 401, nil)
+	promotedToken := loginMember(t, server, "role-member@example.test", "Password123!")
+	requestJSON(t, server, "GET", listPath, promotedToken, nil, 200, nil)
+	requestJSON(t, server, "PUT", targetPath, adminToken, demote, 200, &updated)
+	if updated.Role != "member" {
+		t.Fatal("demotion failed")
+	}
+	requestJSON(t, server, "GET", listPath, promotedToken, nil, 401, nil)
+	newToken := loginMember(t, server, "role-member@example.test", "Password123!")
+	requestJSON(t, server, "GET", listPath, newToken, nil, 403, nil)
+	requestJSON(t, server, "GET", "/api/me", newToken, nil, 200, &updated)
+	if updated.Role != "member" {
+		t.Fatal("role not persisted")
+	}
+}

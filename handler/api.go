@@ -152,6 +152,8 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("DELETE /api/me/favorites/{id}", a.Guard(false, a.Favorite))
 	m.HandleFunc("GET /api/me/preferences", a.Guard(false, a.Preferences))
 	m.HandleFunc("PUT /api/me/preferences", a.Guard(false, a.Preferences))
+	m.HandleFunc("GET /api/admin/members", a.Guard(true, a.AdminMembers))
+	m.HandleFunc("PUT /api/admin/members/{id}/role", a.Guard(true, a.AdminSetRole))
 	m.HandleFunc("GET /api/admin/games", a.Guard(true, a.AdminGames))
 	m.HandleFunc("POST /api/admin/games", a.Guard(true, a.SaveGame))
 	m.HandleFunc("PUT /api/admin/games/{id}", a.Guard(true, a.SaveGame))
