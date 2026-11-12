@@ -11,14 +11,15 @@ Error ทุก handler: `{ "error": "ข้อความ" }` ยกเว้�
 | Method | Path | สิทธิ์ | ผลลัพธ์ |
 |---|---|---|---|
 | GET | /healthz | Public | status ok (503 หาก DB ไม่พร้อม) |
-| POST | /api/auth/register | Public | id; body email,password,displayName |
-| POST | /api/auth/login | Public | token,user; body email,password |
+| POST | /api/auth/register | Public | id; body username,password,displayName (email ยังรองรับบัญชีเดิม) |
+| POST | /api/auth/login | Public | token,user; body username,password (email ยังรองรับบัญชีเดิม) |
 | POST | /api/auth/logout | Member | ยกเลิก JWT ของบัญชีทุก session |
 | GET | /api/me | Member | id,email,displayName,role |
 | PUT | /api/me | Member | body displayName |
 | PUT | /api/me/password | Member | body currentPassword,newPassword; ยกเลิก session เดิม |
 | GET | /api/games?q=keyword | Public | Game[] ที่เผยแพร่เท่านั้น |
 | GET | /api/games/{id} | Public | Game |
+| GET/POST | /api/games/{id}/reviews | Public/Member | รีวิวของเกม; POST body rating (1-5),comment |
 | POST | /api/recommendations | Public | Game[] top5 พร้อม matchScore,reasons |
 | GET/PUT | /api/me/preferences | Member | Preference object |
 | GET | /api/me/favorites | Member | Game[] ของตนเองที่ยังเผยแพร่ |
@@ -42,7 +43,7 @@ Mode is a **soft preference** worth 25, not a hard filter. Game with RPG+story b
 
 Game create example:
 ```json
-{"title":"Example","description":"Example description","imageUrl":"","genres":["rpg"],"tags":["singleplayer","story-rich"],"platforms":["PC"],"isPublished":true}
+{"title":"Example","description":"Example description","descriptionTh":"คำอธิบายเกมภาษาไทย","imageUrl":"","genres":["rpg"],"tags":["singleplayer","story-rich"],"platforms":["PC"],"isPublished":true}
 ```
 Game response adds id, optional rawgId, matchScore, optional reasons. On PUT backend uses path id; role/owner never inferred from client body. Image URL if supplied must be HTTPS.
 

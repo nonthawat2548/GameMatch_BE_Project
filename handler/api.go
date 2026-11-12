@@ -31,10 +31,18 @@ type API struct {
 	SteamClient     *http.Client
 }
 type user struct {
-	ID    int64  `json:"id"`
-	Email string `json:"email"`
-	Name  string `json:"displayName"`
-	Role  string `json:"role"`
+	ID       int64  `json:"id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Name     string `json:"displayName"`
+	Role     string `json:"role"`
+}
+type review struct {
+	ID          int64     `json:"id"`
+	DisplayName string    `json:"displayName"`
+	Rating      int       `json:"rating"`
+	Comment     string    `json:"comment"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 type key int
 
@@ -90,7 +98,7 @@ func (a *API) Guard(admin bool, h http.HandlerFunc) http.HandlerFunc {
 		}
 		var u user
 		var version int
-		e = a.S.DB.QueryRow(r.Context(), `SELECT id,email,display_name,role,token_version FROM gm_members WHERE id=$1`, c.ID).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &version)
+		e = a.S.DB.QueryRow(r.Context(), `SELECT id,email,username,display_name,role,token_version FROM gm_members WHERE id=$1`, c.ID).Scan(&u.ID, &u.Email, &u.Username, &u.Name, &u.Role, &version)
 		if errors.Is(e, pgx.ErrNoRows) {
 			fail(w, 401, "ไม่พบบัญชี")
 			return
@@ -131,6 +139,8 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("PUT /api/me/password", a.Guard(false, a.Password))
 	m.HandleFunc("GET /api/games", a.Games)
 	m.HandleFunc("GET /api/games/{id}", a.Detail)
+	m.HandleFunc("GET /api/games/{id}/reviews", a.Reviews)
+	m.HandleFunc("POST /api/games/{id}/reviews", a.Guard(false, a.Reviews))
 	m.HandleFunc("POST /api/recommendations", a.Recommend)
 	m.HandleFunc("GET /api/me/favorites", a.Guard(false, a.Favorites))
 	m.HandleFunc("PUT /api/me/favorites/{id}", a.Guard(false, a.Favorite))
@@ -149,6 +159,7 @@ func (a *API) Routes() *http.ServeMux {
 func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Email    string `json:"email"`
+		Username string `json:"username"`
 		Password string `json:"password"`
 		Name     string `json:"displayName"`
 	}
@@ -156,10 +167,17 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.Email = strings.ToLower(strings.TrimSpace(b.Email))
+	b.Username = strings.TrimSpace(b.Username)
 	b.Name = strings.TrimSpace(b.Name)
+	if b.Username == "" && b.Email != "" {
+		b.Username = b.Email
+	}
+	if b.Email == "" {
+		b.Email = b.Username + "@local.invalid"
+	}
 	address, e := mail.ParseAddress(b.Email)
-	if e != nil || address.Address != b.Email || b.Name == "" || len(b.Name) > 100 || len(b.Password) < 8 || len(b.Password) > 72 {
-		fail(w, 400, "ตรวจอีเมล ชื่อ และรหัสผ่าน 8–72 bytes")
+	if e != nil || address.Address != b.Email || b.Username == "" || len(b.Username) > 100 || b.Name == "" || len(b.Name) > 100 || len(b.Password) < 8 || len(b.Password) > 72 {
+		fail(w, 400, "กรุณาระบุชื่อผู้ใช้ ชื่อที่แสดง และรหัสผ่าน 8–72 bytes")
 		return
 	}
 	hash, e := bcrypt.GenerateFromPassword([]byte(b.Password), bcrypt.DefaultCost)
@@ -168,7 +186,7 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id int64
-	e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_members(email,password_hash,display_name) VALUES($1,$2,$3) RETURNING id`, b.Email, string(hash), b.Name).Scan(&id)
+	e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_members(email,username,password_hash,display_name) VALUES($1,$2,$3,$4) RETURNING id`, b.Email, b.Username, string(hash), b.Name).Scan(&id)
 	if e != nil {
 		dbError(w, e)
 		return
@@ -178,25 +196,30 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Email    string `json:"email"`
+		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if !decode(w, r, &b) {
 		return
 	}
 	var u user
-	if len(b.Email) > 320 || len(b.Password) > 72 {
-		fail(w, 401, "อีเมลหรือรหัสผ่านไม่ถูกต้อง")
+	identity := strings.TrimSpace(b.Username)
+	if identity == "" {
+		identity = strings.ToLower(strings.TrimSpace(b.Email))
+	}
+	if len(identity) > 320 || len(b.Password) > 72 {
+		fail(w, 401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
 		return
 	}
 	var hash string
 	var version int
-	e := a.S.DB.QueryRow(r.Context(), `SELECT id,email,display_name,role,password_hash,token_version FROM gm_members WHERE email=$1`, strings.ToLower(strings.TrimSpace(b.Email))).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &hash, &version)
+	e := a.S.DB.QueryRow(r.Context(), `SELECT id,email,username,display_name,role,password_hash,token_version FROM gm_members WHERE username=$1 OR email=$1`, identity).Scan(&u.ID, &u.Email, &u.Username, &u.Name, &u.Role, &hash, &version)
 	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 		dbError(w, e)
 		return
 	}
 	if e != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(b.Password)) != nil {
-		fail(w, 401, "อีเมลหรือรหัสผ่านไม่ถูกต้อง")
+		fail(w, 401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
 		return
 	}
 	token, e := auth.Issue(a.Secret, u.ID, version)
@@ -299,6 +322,68 @@ func (a *API) Detail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	fail(w, 404, "ไม่พบเกม")
+}
+func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
+	gameID, e := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if e != nil || gameID <= 0 {
+		fail(w, 400, "id ไม่ถูกต้อง")
+		return
+	}
+	var published bool
+	e = a.S.DB.QueryRow(r.Context(), `SELECT is_published FROM gm_games WHERE id=$1`, gameID).Scan(&published)
+	if e != nil {
+		dbError(w, e)
+		return
+	}
+	if !published {
+		fail(w, 404, "ไม่พบเกม")
+		return
+	}
+	if r.Method == "GET" {
+		rows, e := a.S.DB.Query(r.Context(), `SELECT r.id,m.display_name,r.rating,r.comment,r.created_at FROM gm_reviews r JOIN gm_members m ON m.id=r.member_id WHERE r.game_id=$1 ORDER BY r.created_at DESC,r.id DESC`, gameID)
+		if e != nil {
+			dbError(w, e)
+			return
+		}
+		defer rows.Close()
+		out := []review{}
+		for rows.Next() {
+			var item review
+			if e = rows.Scan(&item.ID, &item.DisplayName, &item.Rating, &item.Comment, &item.CreatedAt); e != nil {
+				dbError(w, e)
+				return
+			}
+			out = append(out, item)
+		}
+		if e = rows.Err(); e != nil {
+			dbError(w, e)
+			return
+		}
+		send(w, 200, out)
+		return
+	}
+	var b struct {
+		Rating  int    `json:"rating"`
+		Comment string `json:"comment"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	b.Comment = strings.TrimSpace(b.Comment)
+	if b.Rating < 1 || b.Rating > 5 || b.Comment == "" || len(b.Comment) > 2000 {
+		fail(w, 400, "คะแนนต้องอยู่ระหว่าง 1–5 และความคิดเห็นไม่เกิน 2000 bytes")
+		return
+	}
+	var item review
+	e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_reviews(member_id,game_id,rating,comment) VALUES($1,$2,$3,$4) RETURNING id,created_at`, current(r).ID, gameID, b.Rating, b.Comment).Scan(&item.ID, &item.CreatedAt)
+	if e != nil {
+		dbError(w, e)
+		return
+	}
+	item.DisplayName = current(r).Name
+	item.Rating = b.Rating
+	item.Comment = b.Comment
+	send(w, 201, item)
 }
 func (a *API) Recommend(w http.ResponseWriter, r *http.Request) {
 	var p recommend.Preference

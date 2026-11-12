@@ -1,0 +1,331 @@
+From ab29747609a0b20d348e3f88b7ee604d2c631a26 Mon Sep 17 00:00:00 2001
+From: Nonthawat Pathomchaikoop <pathomchaikoop_n@su.ac.th>
+Date: Thu, 12 Nov 2026 12:58:16 +0000
+Subject: [PATCH] Add username login reviews and Thai descriptions
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ database/schema.sql |  21 +++++++--
+ docs/API.md         |   7 +--
+ handler/api.go      | 109 +++++++++++++++++++++++++++++++++++++++-----
+ store/store.go      |   9 ++--
+ 4 files changed, 124 insertions(+), 22 deletions(-)
+
+diff --git a/database/schema.sql b/database/schema.sql
+index 271108d..d3a2742 100644
+--- a/database/schema.sql
++++ b/database/schema.sql
+@@ -1,17 +1,21 @@
+ -- Run once in a NEW GameMatch database. These names are isolated from MovieHub.
+ BEGIN;
+ CREATE TABLE IF NOT EXISTS gm_members (
+- id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL,
++ id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, username TEXT UNIQUE,
+  password_hash TEXT NOT NULL, display_name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('member','admin')),
+  token_version INTEGER NOT NULL DEFAULT 0
+ );
++ALTER TABLE gm_members ADD COLUMN IF NOT EXISTS username TEXT;
++UPDATE gm_members SET username=email WHERE username IS NULL;
++ALTER TABLE gm_members ALTER COLUMN username SET NOT NULL;
+ CREATE TABLE IF NOT EXISTS gm_games (
+  id BIGSERIAL PRIMARY KEY, rawg_id BIGINT UNIQUE,
+- title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', image_url TEXT NOT NULL DEFAULT '',
++ title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', description_th TEXT NOT NULL DEFAULT '', image_url TEXT NOT NULL DEFAULT '',
+  genres TEXT[] NOT NULL DEFAULT '{}', tags TEXT[] NOT NULL DEFAULT '{}',
+  platforms TEXT[] NOT NULL DEFAULT '{}', is_published BOOLEAN NOT NULL DEFAULT TRUE
+ );
++ALTER TABLE gm_games ADD COLUMN IF NOT EXISTS description_th TEXT NOT NULL DEFAULT '';
+ -- Safe to rerun when upgrading the original starter database.
+ ALTER TABLE gm_games ADD COLUMN IF NOT EXISTS steam_id BIGINT UNIQUE;
+ ALTER TABLE gm_games ADD COLUMN IF NOT EXISTS release_date DATE;
+@@ -28,14 +32,25 @@ CREATE TABLE IF NOT EXISTS gm_preferences (
+  member_id BIGINT PRIMARY KEY REFERENCES gm_members(id) ON DELETE CASCADE,
+  genre TEXT NOT NULL DEFAULT 'rpg', mode TEXT NOT NULL DEFAULT 'solo', style TEXT NOT NULL DEFAULT 'story'
+ );
++CREATE TABLE IF NOT EXISTS gm_reviews (
++ id BIGSERIAL PRIMARY KEY,
++ member_id BIGINT NOT NULL REFERENCES gm_members(id) ON DELETE CASCADE,
++ game_id BIGINT NOT NULL REFERENCES gm_games(id) ON DELETE CASCADE,
++ rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
++ comment TEXT NOT NULL,
++ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
++ UNIQUE(member_id, game_id)
++);
+ CREATE INDEX IF NOT EXISTS gm_favorites_game_idx ON gm_favorites(game_id);
++CREATE INDEX IF NOT EXISTS gm_reviews_game_idx ON gm_reviews(game_id, created_at DESC);
+ -- Browser never talks to the Supabase Data API. Go uses a trusted server DB role.
+ ALTER TABLE gm_members ENABLE ROW LEVEL SECURITY;
+ ALTER TABLE gm_games ENABLE ROW LEVEL SECURITY;
+ ALTER TABLE gm_favorites ENABLE ROW LEVEL SECURITY;
+ ALTER TABLE gm_preferences ENABLE ROW LEVEL SECURITY;
++ALTER TABLE gm_reviews ENABLE ROW LEVEL SECURITY;
+ -- No client policies: deny direct anon/authenticated access. Go authorization owns access.
+-REVOKE ALL ON gm_members,gm_games,gm_favorites,gm_preferences FROM anon, authenticated;
++REVOKE ALL ON gm_members,gm_games,gm_favorites,gm_preferences,gm_reviews FROM anon, authenticated;
+ COMMIT;
+ -- Make your registered account admin manually (replace email; no default admin password):
+ -- UPDATE gm_members SET role='admin' WHERE email='your-email@example.com';
+diff --git a/docs/API.md b/docs/API.md
+index 68effab..50cb7d2 100644
+--- a/docs/API.md
++++ b/docs/API.md
+@@ -11,14 +11,15 @@ Error ทุก handler: `{ "error": "ข้อความ" }` ยกเว้
+ | Method | Path | สิทธิ์ | ผลลัพธ์ |
+ |---|---|---|---|
+ | GET | /healthz | Public | status ok (503 หาก DB ไม่พร้อม) |
+-| POST | /api/auth/register | Public | id; body email,password,displayName |
+-| POST | /api/auth/login | Public | token,user; body email,password |
++| POST | /api/auth/register | Public | id; body username,password,displayName (email ยังรองรับบัญชีเดิม) |
++| POST | /api/auth/login | Public | token,user; body username,password (email ยังรองรับบัญชีเดิม) |
+ | POST | /api/auth/logout | Member | ยกเลิก JWT ของบัญชีทุก session |
+ | GET | /api/me | Member | id,email,displayName,role |
+ | PUT | /api/me | Member | body displayName |
+ | PUT | /api/me/password | Member | body currentPassword,newPassword; ยกเลิก session เดิม |
+ | GET | /api/games?q=keyword | Public | Game[] ที่เผยแพร่เท่านั้น |
+ | GET | /api/games/{id} | Public | Game |
++| GET/POST | /api/games/{id}/reviews | Public/Member | รีวิวของเกม; POST body rating (1-5),comment |
+ | POST | /api/recommendations | Public | Game[] top5 พร้อม matchScore,reasons |
+ | GET/PUT | /api/me/preferences | Member | Preference object |
+ | GET | /api/me/favorites | Member | Game[] ของตนเองที่ยังเผยแพร่ |
+@@ -42,7 +43,7 @@ Mode is a **soft preference** worth 25, not a hard filter. Game with RPG+story b
+ 
+ Game create example:
+ ```json
+-{"title":"Example","description":"Example description","imageUrl":"","genres":["rpg"],"tags":["singleplayer","story-rich"],"platforms":["PC"],"isPublished":true}
++{"title":"Example","description":"Example description","descriptionTh":"คำอธิบายเกมภาษาไทย","imageUrl":"","genres":["rpg"],"tags":["singleplayer","story-rich"],"platforms":["PC"],"isPublished":true}
+ ```
+ Game response adds id, optional rawgId, matchScore, optional reasons. On PUT backend uses path id; role/owner never inferred from client body. Image URL if supplied must be HTTPS.
+ 
+diff --git a/handler/api.go b/handler/api.go
+index 258bed5..1521198 100644
+--- a/handler/api.go
++++ b/handler/api.go
+@@ -31,10 +31,18 @@ type API struct {
+ 	SteamClient     *http.Client
+ }
+ type user struct {
+-	ID    int64  `json:"id"`
+-	Email string `json:"email"`
+-	Name  string `json:"displayName"`
+-	Role  string `json:"role"`
++	ID       int64  `json:"id"`
++	Email    string `json:"email"`
++	Username string `json:"username"`
++	Name     string `json:"displayName"`
++	Role     string `json:"role"`
++}
++type review struct {
++	ID          int64     `json:"id"`
++	DisplayName string    `json:"displayName"`
++	Rating      int       `json:"rating"`
++	Comment     string    `json:"comment"`
++	CreatedAt   time.Time `json:"createdAt"`
+ }
+ type key int
+ 
+@@ -90,7 +98,7 @@ func (a *API) Guard(admin bool, h http.HandlerFunc) http.HandlerFunc {
+ 		}
+ 		var u user
+ 		var version int
+-		e = a.S.DB.QueryRow(r.Context(), `SELECT id,email,display_name,role,token_version FROM gm_members WHERE id=$1`, c.ID).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &version)
++		e = a.S.DB.QueryRow(r.Context(), `SELECT id,email,username,display_name,role,token_version FROM gm_members WHERE id=$1`, c.ID).Scan(&u.ID, &u.Email, &u.Username, &u.Name, &u.Role, &version)
+ 		if errors.Is(e, pgx.ErrNoRows) {
+ 			fail(w, 401, "ไม่พบบัญชี")
+ 			return
+@@ -131,6 +139,8 @@ func (a *API) Routes() *http.ServeMux {
+ 	m.HandleFunc("PUT /api/me/password", a.Guard(false, a.Password))
+ 	m.HandleFunc("GET /api/games", a.Games)
+ 	m.HandleFunc("GET /api/games/{id}", a.Detail)
++	m.HandleFunc("GET /api/games/{id}/reviews", a.Reviews)
++	m.HandleFunc("POST /api/games/{id}/reviews", a.Guard(false, a.Reviews))
+ 	m.HandleFunc("POST /api/recommendations", a.Recommend)
+ 	m.HandleFunc("GET /api/me/favorites", a.Guard(false, a.Favorites))
+ 	m.HandleFunc("PUT /api/me/favorites/{id}", a.Guard(false, a.Favorite))
+@@ -149,6 +159,7 @@ func (a *API) Routes() *http.ServeMux {
+ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
+ 	var b struct {
+ 		Email    string `json:"email"`
++		Username string `json:"username"`
+ 		Password string `json:"password"`
+ 		Name     string `json:"displayName"`
+ 	}
+@@ -156,10 +167,17 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
+ 		return
+ 	}
+ 	b.Email = strings.ToLower(strings.TrimSpace(b.Email))
++	b.Username = strings.TrimSpace(b.Username)
+ 	b.Name = strings.TrimSpace(b.Name)
++	if b.Username == "" && b.Email != "" {
++		b.Username = b.Email
++	}
++	if b.Email == "" {
++		b.Email = b.Username + "@local.invalid"
++	}
+ 	address, e := mail.ParseAddress(b.Email)
+-	if e != nil || address.Address != b.Email || b.Name == "" || len(b.Name) > 100 || len(b.Password) < 8 || len(b.Password) > 72 {
+-		fail(w, 400, "ตรวจอีเมล ชื่อ และรหัสผ่าน 8–72 bytes")
++	if e != nil || address.Address != b.Email || b.Username == "" || len(b.Username) > 100 || b.Name == "" || len(b.Name) > 100 || len(b.Password) < 8 || len(b.Password) > 72 {
++		fail(w, 400, "กรุณาระบุชื่อผู้ใช้ ชื่อที่แสดง และรหัสผ่าน 8–72 bytes")
+ 		return
+ 	}
+ 	hash, e := bcrypt.GenerateFromPassword([]byte(b.Password), bcrypt.DefaultCost)
+@@ -168,7 +186,7 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
+ 		return
+ 	}
+ 	var id int64
+-	e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_members(email,password_hash,display_name) VALUES($1,$2,$3) RETURNING id`, b.Email, string(hash), b.Name).Scan(&id)
++	e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_members(email,username,password_hash,display_name) VALUES($1,$2,$3,$4) RETURNING id`, b.Email, b.Username, string(hash), b.Name).Scan(&id)
+ 	if e != nil {
+ 		dbError(w, e)
+ 		return
+@@ -178,25 +196,30 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
+ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
+ 	var b struct {
+ 		Email    string `json:"email"`
++		Username string `json:"username"`
+ 		Password string `json:"password"`
+ 	}
+ 	if !decode(w, r, &b) {
+ 		return
+ 	}
+ 	var u user
+-	if len(b.Email) > 320 || len(b.Password) > 72 {
+-		fail(w, 401, "อีเมลหรือรหัสผ่านไม่ถูกต้อง")
++	identity := strings.TrimSpace(b.Username)
++	if identity == "" {
++		identity = strings.ToLower(strings.TrimSpace(b.Email))
++	}
++	if len(identity) > 320 || len(b.Password) > 72 {
++		fail(w, 401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+ 		return
+ 	}
+ 	var hash string
+ 	var version int
+-	e := a.S.DB.QueryRow(r.Context(), `SELECT id,email,display_name,role,password_hash,token_version FROM gm_members WHERE email=$1`, strings.ToLower(strings.TrimSpace(b.Email))).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &hash, &version)
++	e := a.S.DB.QueryRow(r.Context(), `SELECT id,email,username,display_name,role,password_hash,token_version FROM gm_members WHERE username=$1 OR email=$1`, identity).Scan(&u.ID, &u.Email, &u.Username, &u.Name, &u.Role, &hash, &version)
+ 	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
+ 		dbError(w, e)
+ 		return
+ 	}
+ 	if e != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(b.Password)) != nil {
+-		fail(w, 401, "อีเมลหรือรหัสผ่านไม่ถูกต้อง")
++		fail(w, 401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+ 		return
+ 	}
+ 	token, e := auth.Issue(a.Secret, u.ID, version)
+@@ -300,6 +323,68 @@ func (a *API) Detail(w http.ResponseWriter, r *http.Request) {
+ 	}
+ 	fail(w, 404, "ไม่พบเกม")
+ }
++func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
++	gameID, e := strconv.ParseInt(r.PathValue("id"), 10, 64)
++	if e != nil || gameID <= 0 {
++		fail(w, 400, "id ไม่ถูกต้อง")
++		return
++	}
++	var published bool
++	e = a.S.DB.QueryRow(r.Context(), `SELECT is_published FROM gm_games WHERE id=$1`, gameID).Scan(&published)
++	if e != nil {
++		dbError(w, e)
++		return
++	}
++	if !published {
++		fail(w, 404, "ไม่พบเกม")
++		return
++	}
++	if r.Method == "GET" {
++		rows, e := a.S.DB.Query(r.Context(), `SELECT r.id,m.display_name,r.rating,r.comment,r.created_at FROM gm_reviews r JOIN gm_members m ON m.id=r.member_id WHERE r.game_id=$1 ORDER BY r.created_at DESC,r.id DESC`, gameID)
++		if e != nil {
++			dbError(w, e)
++			return
++		}
++		defer rows.Close()
++		out := []review{}
++		for rows.Next() {
++			var item review
++			if e = rows.Scan(&item.ID, &item.DisplayName, &item.Rating, &item.Comment, &item.CreatedAt); e != nil {
++				dbError(w, e)
++				return
++			}
++			out = append(out, item)
++		}
++		if e = rows.Err(); e != nil {
++			dbError(w, e)
++			return
++		}
++		send(w, 200, out)
++		return
++	}
++	var b struct {
++		Rating  int    `json:"rating"`
++		Comment string `json:"comment"`
++	}
++	if !decode(w, r, &b) {
++		return
++	}
++	b.Comment = strings.TrimSpace(b.Comment)
++	if b.Rating < 1 || b.Rating > 5 || b.Comment == "" || len(b.Comment) > 2000 {
++		fail(w, 400, "คะแนนต้องอยู่ระหว่าง 1–5 และความคิดเห็นไม่เกิน 2000 bytes")
++		return
++	}
++	var item review
++	e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_reviews(member_id,game_id,rating,comment) VALUES($1,$2,$3,$4) RETURNING id,created_at`, current(r).ID, gameID, b.Rating, b.Comment).Scan(&item.ID, &item.CreatedAt)
++	if e != nil {
++		dbError(w, e)
++		return
++	}
++	item.DisplayName = current(r).Name
++	item.Rating = b.Rating
++	item.Comment = b.Comment
++	send(w, 201, item)
++}
+ func (a *API) Recommend(w http.ResponseWriter, r *http.Request) {
+ 	var p recommend.Preference
+ 	if !decode(w, r, &p) {
+diff --git a/store/store.go b/store/store.go
+index 6e4414b..0796596 100644
+--- a/store/store.go
++++ b/store/store.go
+@@ -17,6 +17,7 @@ type Game struct {
+ 	PopularityUpdatedAt *time.Time `json:"popularityUpdatedAt,omitempty"`
+ 	Title               string     `json:"title"`
+ 	Description         string     `json:"description"`
++	DescriptionTh       string     `json:"descriptionTh"`
+ 	ImageURL            string     `json:"imageUrl"`
+ 	Genres              []string   `json:"genres"`
+ 	Tags                []string   `json:"tags"`
+@@ -28,7 +29,7 @@ type Game struct {
+ type Store struct{ DB *pgxpool.Pool }
+ 
+ func (s *Store) Games(ctx context.Context, admin bool) ([]Game, error) {
+-	rows, e := s.DB.Query(ctx, `SELECT id,rawg_id,title,description,image_url,genres,tags,platforms,is_published,steam_id,COALESCE(release_date::text,''),synced_at,popularity_order,COALESCE(popularity_source,''),popularity_updated_at FROM gm_games WHERE ($1 OR is_published) ORDER BY popularity_order ASC NULLS LAST,release_date DESC NULLS LAST,id DESC`, admin)
++	rows, e := s.DB.Query(ctx, `SELECT id,rawg_id,title,description,description_th,image_url,genres,tags,platforms,is_published,steam_id,COALESCE(release_date::text,''),synced_at,popularity_order,COALESCE(popularity_source,''),popularity_updated_at FROM gm_games WHERE ($1 OR is_published) ORDER BY popularity_order ASC NULLS LAST,release_date DESC NULLS LAST,id DESC`, admin)
+ 	if e != nil {
+ 		return nil, e
+ 	}
+@@ -36,7 +37,7 @@ func (s *Store) Games(ctx context.Context, admin bool) ([]Game, error) {
+ 	out := []Game{}
+ 	for rows.Next() {
+ 		var g Game
+-		if e = rows.Scan(&g.ID, &g.RawgID, &g.Title, &g.Description, &g.ImageURL, &g.Genres, &g.Tags, &g.Platforms, &g.Published, &g.SteamID, &g.ReleaseDate, &g.SyncedAt, &g.PopularityOrder, &g.PopularitySource, &g.PopularityUpdatedAt); e != nil {
++		if e = rows.Scan(&g.ID, &g.RawgID, &g.Title, &g.Description, &g.DescriptionTh, &g.ImageURL, &g.Genres, &g.Tags, &g.Platforms, &g.Published, &g.SteamID, &g.ReleaseDate, &g.SyncedAt, &g.PopularityOrder, &g.PopularitySource, &g.PopularityUpdatedAt); e != nil {
+ 			return nil, e
+ 		}
+ 		out = append(out, g)
+@@ -55,10 +56,10 @@ func (s *Store) Save(ctx context.Context, g Game) (int64, error) {
+ 	}
+ 	if g.ID > 0 {
+ 		var id int64
+-		e := s.DB.QueryRow(ctx, `UPDATE gm_games SET title=$1,description=$2,image_url=$3,genres=$4,tags=$5,platforms=$6,is_published=$7 WHERE id=$8 RETURNING id`, g.Title, g.Description, g.ImageURL, g.Genres, g.Tags, g.Platforms, g.Published, g.ID).Scan(&id)
++		e := s.DB.QueryRow(ctx, `UPDATE gm_games SET title=$1,description=$2,description_th=$3,image_url=$4,genres=$5,tags=$6,platforms=$7,is_published=$8 WHERE id=$9 RETURNING id`, g.Title, g.Description, g.DescriptionTh, g.ImageURL, g.Genres, g.Tags, g.Platforms, g.Published, g.ID).Scan(&id)
+ 		return id, e
+ 	}
+ 	var id int64
+-	e := s.DB.QueryRow(ctx, `INSERT INTO gm_games(rawg_id,title,description,image_url,genres,tags,platforms,is_published) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, g.RawgID, g.Title, g.Description, g.ImageURL, g.Genres, g.Tags, g.Platforms, g.Published).Scan(&id)
++	e := s.DB.QueryRow(ctx, `INSERT INTO gm_games(rawg_id,title,description,description_th,image_url,genres,tags,platforms,is_published) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, g.RawgID, g.Title, g.Description, g.DescriptionTh, g.ImageURL, g.Genres, g.Tags, g.Platforms, g.Published).Scan(&id)
+ 	return id, e
+ }
+-- 
+2.56.0
+
