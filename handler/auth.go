@@ -48,8 +48,7 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "สร้างรหัสผ่านไม่สำเร็จ")
 		return
 	}
-	var id int64
-	e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_members(email,username,password_hash,display_name) VALUES($1,$2,$3,$4) RETURNING id`, b.Email, b.Username, hash, b.Name).Scan(&id)
+	id, e := a.S.CreateMember(r.Context(), b.Email, b.Username, hash, b.Name)
 	if e != nil {
 		dbError(w, e)
 		return
@@ -65,18 +64,15 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
-	var u user
 	identity := strings.TrimSpace(b.Username)
 	if identity == "" {
 		identity = strings.TrimSpace(b.Email)
 	}
 	if len(identity) > 320 || len(b.Password) > 72 {
-		fail(w, 401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+		fail(w, 401, "อีเมล ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง")
 		return
 	}
-	var hash string
-	var version int
-	e := a.S.DB.QueryRow(r.Context(), `SELECT id,email,username,display_name,role,password_hash,token_version FROM gm_members WHERE email=$1 OR username=$2 ORDER BY CASE WHEN email=$1 THEN 0 ELSE 1 END LIMIT 1`, strings.ToLower(identity), identity).Scan(&u.ID, &u.Email, &u.Username, &u.Name, &u.Role, &hash, &version)
+	u, hash, version, e := a.S.MemberByIdentity(r.Context(), identity)
 	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 		dbError(w, e)
 		return
@@ -87,7 +83,7 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !auth.CheckPassword(hash, b.Password) {
-		fail(w, 401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+		fail(w, 401, "อีเมล ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง")
 		return
 	}
 	token, e := auth.Issue(a.Secret, u.ID, version)
@@ -98,7 +94,7 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 	send(w, 200, map[string]any{"token": token, "user": u})
 }
 func (a *API) Logout(w http.ResponseWriter, r *http.Request) {
-	_, e := a.S.DB.Exec(r.Context(), `UPDATE gm_members SET token_version=token_version+1 WHERE id=$1`, current(r).ID)
+	e := a.S.RevokeMemberSessions(r.Context(), current(r).ID)
 	if e != nil {
 		dbError(w, e)
 		return
@@ -117,7 +113,7 @@ func (a *API) Profile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "กรุณาระบุชื่อที่แสดง ไม่เกิน 50 ตัวอักษร")
 		return
 	}
-	_, e := a.S.DB.Exec(r.Context(), `UPDATE gm_members SET display_name=$1 WHERE id=$2`, b.Name, current(r).ID)
+	e := a.S.UpdateMemberName(r.Context(), current(r).ID, b.Name)
 	if e != nil {
 		dbError(w, e)
 		return
@@ -136,8 +132,7 @@ func (a *API) Password(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร และไม่เกิน 72 ไบต์")
 		return
 	}
-	var old string
-	e := a.S.DB.QueryRow(r.Context(), `SELECT password_hash FROM gm_members WHERE id=$1`, current(r).ID).Scan(&old)
+	old, e := a.S.MemberPassword(r.Context(), current(r).ID)
 	if e != nil {
 		dbError(w, e)
 		return
@@ -151,12 +146,12 @@ func (a *API) Password(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "สร้างรหัสผ่านไม่สำเร็จ")
 		return
 	}
-	result, e := a.S.DB.Exec(r.Context(), `UPDATE gm_members SET password_hash=$1,token_version=token_version+1 WHERE id=$2 AND password_hash=$3`, hash, current(r).ID, old)
+	updated, e := a.S.UpdateMemberPassword(r.Context(), current(r).ID, old, hash)
 	if e != nil {
 		dbError(w, e)
 		return
 	}
-	if result.RowsAffected() != 1 {
+	if !updated {
 		fail(w, 409, "ข้อมูลเปลี่ยนแล้ว กรุณาลองใหม่")
 		return
 	}

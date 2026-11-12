@@ -70,3 +70,12 @@ func (a *API) DeleteGame(w http.ResponseWriter, r *http.Request) {
 }
 
 // SyncStatus reports configuration presence only; it never returns the key.
+
+func (a *API) AdminStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := a.S.Stats(r.Context())
+	if err != nil {
+		dbError(w, err)
+		return
+	}
+	send(w, 200, stats)
+}

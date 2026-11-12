@@ -23,13 +23,7 @@ type API struct {
 	RawgClient      *http.Client
 	SteamClient     *http.Client
 }
-type user struct {
-	ID       int64  `json:"id"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	Name     string `json:"displayName"`
-	Role     string `json:"role"`
-}
+type user = store.Member
 type review struct {
 	MemberID    int64     `json:"memberId"`
 	ID          int64     `json:"id"`
@@ -38,10 +32,6 @@ type review struct {
 	Comment     string    `json:"comment"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
-type key int
-
-const userKey key = 1
-
 func send(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -110,6 +100,7 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("DELETE /api/me/favorites/{id}", a.Guard(false, a.Favorite))
 	m.HandleFunc("GET /api/me/preferences", a.Guard(false, a.Preferences))
 	m.HandleFunc("PUT /api/me/preferences", a.Guard(false, a.Preferences))
+	m.HandleFunc("GET /api/admin/stats", a.Guard(true, a.AdminStats))
 	m.HandleFunc("GET /api/admin/members", a.Guard(true, a.AdminMembers))
 	m.HandleFunc("PUT /api/admin/members/{id}/role", a.Guard(true, a.AdminSetRole))
 	m.HandleFunc("GET /api/admin/games", a.Guard(true, a.AdminGames))

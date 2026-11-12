@@ -434,3 +434,19 @@ func TestAdminMemberRoles(t *testing.T) {
 		t.Fatal("role not persisted")
 	}
 }
+
+func TestAdminStatsUsesRealDataAndRequiresRole(t *testing.T) {
+	a, server := databaseAPI(t)
+	id := registerMember(t, server, "stats-admin@example.test")
+	registerMember(t, server, "stats-member@example.test")
+	if _, err := a.S.DB.Exec(context.Background(), "UPDATE gm_members SET role='admin' WHERE id=$1", id); err != nil { t.Fatal(err) }
+	admin := loginMember(t, server, "stats-admin@example.test", "Password123!")
+	member := loginMember(t, server, "stats-member@example.test", "Password123!")
+	requestJSON(t, server, "GET", "/api/admin/stats", "", nil, 401, nil)
+	requestJSON(t, server, "GET", "/api/admin/stats", member, nil, 403, nil)
+	var stats store.AdminStats
+	requestJSON(t, server, "GET", "/api/admin/stats", admin, nil, 200, &stats)
+	if stats.Members != 2 || stats.Admins != 1 || stats.Games != 0 || stats.Reviews != 0 {
+		t.Fatalf("unexpected stats: %#v", stats)
+	}
+}

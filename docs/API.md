@@ -106,3 +106,5 @@ JWT ที่ออกหลัง Login มีอายุ 1 ชั่วโม
 
 ### กติกาบัญชีและรีวิว (เทียบ MovieHub)
 สมัครใหม่ด้วย email จริง (ไม่สร้าง @local.invalid) ชื่อแสดง 1–50 ตัวอักษร รหัสผ่านอย่างน้อย 8 ตัวอักษรและไม่เกิน 72 ไบต์; บัญชีเก่ายัง login ด้วย username ได้ ไม่แก้ข้อมูลเดิม. รีวิวใหม่หรือแก้ไขต้องมีข้อความอย่างน้อย 10 ตัวอักษร ไม่เกิน 2000 ไบต์. JWT 1 ชั่วโมงตามเดิม.
+
+- GET /api/admin/stats: Admin only; returns games, published, members, admins, reviews from SQL counts. Backend middleware is now in mw/auth.go and member SQL in store/members.go.

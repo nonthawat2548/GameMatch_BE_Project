@@ -7,22 +7,8 @@ import (
 
 // Like MovieHub's AdminMembers: never expose password hashes or token versions.
 func (a *API) AdminMembers(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.S.DB.Query(r.Context(), `SELECT id,email,username,display_name,role FROM gm_members ORDER BY id DESC`)
+	items, err := a.S.ListMembers(r.Context())
 	if err != nil {
-		dbError(w, err)
-		return
-	}
-	defer rows.Close()
-	items := []user{}
-	for rows.Next() {
-		var u user
-		if err = rows.Scan(&u.ID, &u.Email, &u.Username, &u.Name, &u.Role); err != nil {
-			dbError(w, err)
-			return
-		}
-		items = append(items, u)
-	}
-	if err = rows.Err(); err != nil {
 		dbError(w, err)
 		return
 	}
