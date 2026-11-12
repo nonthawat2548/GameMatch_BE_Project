@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+	"github.com/jackc/pgx/v5"
 	"context"
 	"strings"
 )
@@ -66,4 +68,31 @@ func (s *Store) ListMembers(ctx context.Context) ([]Member, error) {
 		items = append(items, m)
 	}
 	return items, rows.Err()
+}
+
+var ErrNotAdmin = errors.New("actor is not an admin")
+
+func (s *Store) SetMemberRole(ctx context.Context, actorID, id int64, role string) (Member, error) {
+	var updated Member
+	tx, err := s.DB.Begin(ctx)
+	if err != nil { return updated, err }
+	defer tx.Rollback(ctx)
+	// Lock actor and target in stable order and check the actor again.
+	rows, err := tx.Query(ctx, `SELECT id,role FROM gm_members WHERE id IN ($1,$2) ORDER BY id FOR UPDATE`, actorID, id)
+	if err != nil { return updated, err }
+	roles := map[int64]string{}
+	for rows.Next() {
+		var memberID int64
+		var value string
+		if err = rows.Scan(&memberID, &value); err != nil { rows.Close(); return updated, err }
+		roles[memberID] = value
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil { return updated, err }
+	if roles[actorID] != "admin" { return updated, ErrNotAdmin }
+	if _, ok := roles[id]; !ok { return updated, pgx.ErrNoRows }
+	err = tx.QueryRow(ctx, `UPDATE gm_members SET role=$2,token_version=token_version+CASE WHEN role<>$2 THEN 1 ELSE 0 END WHERE id=$1 RETURNING id,email,username,display_name,role`, id, role).Scan(&updated.ID, &updated.Email, &updated.Username, &updated.Name, &updated.Role)
+	if err != nil { return updated, err }
+	return updated, tx.Commit(ctx)
 }

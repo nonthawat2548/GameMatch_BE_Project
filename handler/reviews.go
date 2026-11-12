@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"gamematch/store"
 	"errors"
 	"github.com/jackc/pgx/v5/pgconn"
 	"net/http"
@@ -15,8 +16,7 @@ func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "id ไม่ถูกต้อง")
 		return
 	}
-	var published bool
-	e = a.S.DB.QueryRow(r.Context(), `SELECT is_published FROM gm_games WHERE id=$1`, gameID).Scan(&published)
+	published, e := a.S.GamePublished(r.Context(), gameID)
 	if e != nil {
 		dbError(w, e)
 		return
@@ -26,22 +26,8 @@ func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
-		rows, e := a.S.DB.Query(r.Context(), `SELECT r.id,r.member_id,m.display_name,r.rating,r.comment,r.created_at FROM gm_reviews r JOIN gm_members m ON m.id=r.member_id WHERE r.game_id=$1 ORDER BY r.created_at DESC,r.id DESC`, gameID)
+		out, e := a.S.ListReviews(r.Context(), gameID)
 		if e != nil {
-			dbError(w, e)
-			return
-		}
-		defer rows.Close()
-		out := []review{}
-		for rows.Next() {
-			var item review
-			if e = rows.Scan(&item.ID, &item.MemberID, &item.DisplayName, &item.Rating, &item.Comment, &item.CreatedAt); e != nil {
-				dbError(w, e)
-				return
-			}
-			out = append(out, item)
-		}
-		if e = rows.Err(); e != nil {
 			dbError(w, e)
 			return
 		}
@@ -58,12 +44,12 @@ func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "DELETE" {
 		who := current(r)
-		result, err := a.S.DB.Exec(r.Context(), `DELETE FROM gm_reviews WHERE id=$1 AND game_id=$2 AND (member_id=$3 OR $4)`, reviewID, gameID, who.ID, who.Role == "admin")
+		deleted, err := a.S.DeleteReview(r.Context(), reviewID, gameID, who.ID, who.Role == "admin")
 		if err != nil {
 			dbError(w, err)
 			return
 		}
-		if result.RowsAffected() == 0 {
+		if !deleted {
 			fail(w, 404, "ไม่พบรีวิวหรือไม่มีสิทธิ์ลบ")
 			return
 		}
@@ -83,13 +69,13 @@ func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	who := current(r)
-	item := review{MemberID: who.ID, DisplayName: who.Name, Rating: b.Rating, Comment: b.Comment}
+	item := store.Review{MemberID: who.ID, DisplayName: who.Name, Rating: b.Rating, Comment: b.Comment}
 	status := 201
 	if r.Method == "PUT" {
 		status = 200
-		e = a.S.DB.QueryRow(r.Context(), `UPDATE gm_reviews SET rating=$1,comment=$2 WHERE id=$3 AND game_id=$4 AND member_id=$5 RETURNING id,created_at`, b.Rating, b.Comment, reviewID, gameID, who.ID).Scan(&item.ID, &item.CreatedAt)
+		item, e = a.S.UpdateReview(r.Context(), reviewID, gameID, item)
 	} else {
-		e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_reviews(member_id,game_id,rating,comment) VALUES($1,$2,$3,$4) RETURNING id,created_at`, who.ID, gameID, b.Rating, b.Comment).Scan(&item.ID, &item.CreatedAt)
+		item, e = a.S.AddReview(r.Context(), gameID, item)
 	}
 	if e != nil {
 		var pgErr *pgconn.PgError

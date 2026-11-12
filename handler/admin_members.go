@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"errors"
+	"gamematch/store"
+	"github.com/jackc/pgx/v5"
 	"net/http"
 	"strconv"
 )
@@ -38,54 +41,15 @@ func (a *API) AdminSetRole(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "ไม่สามารถเปลี่ยนบทบาทของตัวเองได้")
 		return
 	}
-	ctx := r.Context()
-	tx, err := a.S.DB.Begin(ctx)
-	if err != nil {
-		dbError(w, err)
-		return
-	}
-	defer tx.Rollback(ctx)
-	// Always lock in the same order. Re-read actor and target in this transaction.
-	rows, err := tx.Query(ctx, `SELECT id,role FROM gm_members WHERE id IN ($1,$2) ORDER BY id FOR UPDATE`, me, id)
-	if err != nil {
-		dbError(w, err)
-		return
-	}
-	roles := map[int64]string{}
-	for rows.Next() {
-		var memberID int64
-		var role string
-		if err = rows.Scan(&memberID, &role); err != nil {
-			rows.Close()
-			dbError(w, err)
-			return
-		}
-		roles[memberID] = role
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		dbError(w, err)
-		return
-	}
-	if roles[me] != "admin" {
+	updated, err := a.S.SetMemberRole(r.Context(), me, id, req.Role)
+	switch {
+	case errors.Is(err, store.ErrNotAdmin):
 		fail(w, 403, "สำหรับผู้ดูแลระบบเท่านั้น")
-		return
-	}
-	if _, ok := roles[id]; !ok {
+	case errors.Is(err, pgx.ErrNoRows):
 		fail(w, 404, "ไม่พบสมาชิก")
-		return
-	}
-	var updated user
-	// Revoke old sessions only when the role actually changes.
-	err = tx.QueryRow(ctx, `UPDATE gm_members SET role=$2,token_version=token_version+CASE WHEN role<>$2 THEN 1 ELSE 0 END WHERE id=$1 RETURNING id,email,username,display_name,role`, id, req.Role).Scan(&updated.ID, &updated.Email, &updated.Username, &updated.Name, &updated.Role)
-	if err != nil {
+	case err != nil:
 		dbError(w, err)
-		return
+	default:
+		send(w, 200, updated)
 	}
-	if err = tx.Commit(ctx); err != nil {
-		dbError(w, err)
-		return
-	}
-	send(w, 200, updated)
 }

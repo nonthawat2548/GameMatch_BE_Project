@@ -57,19 +57,17 @@ func (a *API) DeleteGame(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "id ไม่ถูกต้อง")
 		return
 	}
-	result, e := a.S.DB.Exec(r.Context(), `DELETE FROM gm_games WHERE id=$1`, id)
+	deleted, e := a.S.DeleteGame(r.Context(), id)
 	if e != nil {
 		dbError(w, e)
 		return
 	}
-	if result.RowsAffected() == 0 {
+	if !deleted {
 		fail(w, 404, "ไม่พบเกม")
 		return
 	}
 	send(w, 200, map[string]bool{"ok": true})
 }
-
-// SyncStatus reports configuration presence only; it never returns the key.
 
 func (a *API) AdminStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := a.S.Stats(r.Context())

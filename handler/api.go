@@ -24,14 +24,7 @@ type API struct {
 	SteamClient     *http.Client
 }
 type user = store.Member
-type review struct {
-	MemberID    int64     `json:"memberId"`
-	ID          int64     `json:"id"`
-	DisplayName string    `json:"displayName"`
-	Rating      int       `json:"rating"`
-	Comment     string    `json:"comment"`
-	CreatedAt   time.Time `json:"createdAt"`
-}
+
 func send(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

@@ -10,23 +10,7 @@ import (
 )
 
 func (a *API) Favorites(w http.ResponseWriter, r *http.Request) {
-	rows, e := a.S.DB.Query(r.Context(), `SELECT game_id FROM gm_favorites WHERE member_id=$1`, current(r).ID)
-	if e != nil {
-		dbError(w, e)
-		return
-	}
-	ids := map[int64]bool{}
-	for rows.Next() {
-		var id int64
-		if e = rows.Scan(&id); e != nil {
-			rows.Close()
-			dbError(w, e)
-			return
-		}
-		ids[id] = true
-	}
-	e = rows.Err()
-	rows.Close()
+	ids, e := a.S.FavoriteIDs(r.Context(), current(r).ID)
 	if e != nil {
 		dbError(w, e)
 		return
@@ -55,10 +39,10 @@ func (a *API) Favorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "DELETE" {
-		_, e = a.S.DB.Exec(r.Context(), `DELETE FROM gm_favorites WHERE member_id=$1 AND game_id=$2`, current(r).ID, id)
+		e = a.S.RemoveFavorite(r.Context(), current(r).ID, id)
 	} else {
-		var exists bool
-		e = a.S.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM gm_games WHERE id=$1 AND is_published)`, id).Scan(&exists)
+		exists, err := a.S.PublishedGameExists(r.Context(), id)
+		e = err
 		if e != nil {
 			dbError(w, e)
 			return
@@ -67,7 +51,7 @@ func (a *API) Favorite(w http.ResponseWriter, r *http.Request) {
 			fail(w, 404, "ไม่พบเกม")
 			return
 		}
-		_, e = a.S.DB.Exec(r.Context(), `INSERT INTO gm_favorites VALUES($1,$2) ON CONFLICT DO NOTHING`, current(r).ID, id)
+		e = a.S.AddFavorite(r.Context(), current(r).ID, id)
 	}
 	if e != nil {
 		dbError(w, e)
@@ -78,7 +62,8 @@ func (a *API) Favorite(w http.ResponseWriter, r *http.Request) {
 func (a *API) Preferences(w http.ResponseWriter, r *http.Request) {
 	p := recommend.Preference{Genre: "rpg", Mode: "solo", Style: "story"}
 	if r.Method == "GET" {
-		e := a.S.DB.QueryRow(r.Context(), `SELECT genre,mode,style FROM gm_preferences WHERE member_id=$1`, current(r).ID).Scan(&p.Genre, &p.Mode, &p.Style)
+		genre, mode, style, e := a.S.MemberPreferences(r.Context(), current(r).ID)
+		if e == nil { p.Genre, p.Mode, p.Style = genre, mode, style }
 		if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 			dbError(w, e)
 			return
@@ -93,7 +78,7 @@ func (a *API) Preferences(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "ตัวเลือกไม่ถูกต้อง")
 		return
 	}
-	_, e := a.S.DB.Exec(r.Context(), `INSERT INTO gm_preferences VALUES($1,$2,$3,$4) ON CONFLICT(member_id) DO UPDATE SET genre=$2,mode=$3,style=$4`, current(r).ID, p.Genre, p.Mode, p.Style)
+	e := a.S.SavePreferences(r.Context(), current(r).ID, p.Genre, p.Mode, p.Style)
 	if e != nil {
 		dbError(w, e)
 		return
