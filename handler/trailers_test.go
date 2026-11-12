@@ -13,3 +13,22 @@ func TestMovieSourcesNativeAndAdaptive(t *testing.T) {
 		if steamVideoURL(raw)!="" { t.Fatalf("accepted %s",raw) }
 	}
 }
+
+func TestParseSteamMoviesEmptyAndMalformed(t *testing.T) {
+	for _, body := range []string{
+		`{"70":{"success":true,"data":{"name":"Half-Life"}}}`,
+		`{"70":{"success":true,"data":{"movies":[]}}}`,
+	} {
+		movies, err := parseSteamMovies([]byte(body), "70")
+		if err != nil || len(movies) != 0 { t.Fatalf("movies=%#v err=%v", movies, err) }
+	}
+	for _, body := range []string{
+		`{"70":{"success":true,"data":[]}}`,
+		`{"70":{"success":false}}`,
+		`{"70":{"success":true,"data":null}}`,
+		`{"71":{"success":true,"data":{}}}`,
+		`<html>error</html>`,
+	} {
+		if _,err := parseSteamMovies([]byte(body), "70"); err == nil { t.Fatalf("accepted %s", body) }
+	}
+}

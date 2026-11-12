@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -90,29 +92,58 @@ func (a *API) GameTrailers(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	client := a.SteamClient
 	if client == nil { client = &http.Client{Timeout:8*time.Second} }
-	key := strconv.FormatInt(*appID,10)
-	data,err := steamFetch(ctx,client,"/api/appdetails?appids="+key+"&cc=th&l=english&filters=movies")
-	var result map[string]struct {
-		Success bool `json:"success"`
-		Data struct { Movies []steamMovie `json:"movies"` } `json:"data"`
+	movies, err := fetchSteamMovies(ctx, client, *appID)
+	if err != nil {
+		log.Printf("Steam trailer metadata app=%d: %v", *appID, err)
+		fail(w, 502, "โหลดคลิปจาก Steam ไม่สำเร็จ ลองใหม่ได้")
+		return
 	}
-	if err != nil || json.Unmarshal(data,&result)!=nil { fail(w,502,"โหลดคลิปจาก Steam ไม่สำเร็จ ลองใหม่ได้"); return }
-	entry,ok := result[key]
-	if !ok || !entry.Success { fail(w,502,"Steam ยังไม่ส่งข้อมูลคลิปเกมนี้"); return }
 	// Prefer gameplay explicitly labeled by the publisher, then highlighted videos.
-	sort.SliceStable(entry.Data.Movies,func(i,j int)bool{
+	sort.SliceStable(movies,func(i,j int)bool{
 		rank:=func(m steamMovie)int{
 			if strings.Contains(strings.ToLower(m.Name),"gameplay"){return 0}
 			if m.Highlight{return 1}
 			return 2
 		}
-		return rank(entry.Data.Movies[i])<rank(entry.Data.Movies[j])
+		return rank(movies[i])<rank(movies[j])
 	})
-	for _, movie := range entry.Data.Movies {
+	for _, movie := range movies {
 		t := movieSources(movie,*appID)
 		if len(t.Sources)>0 { out=append(out,t) }
 		if len(out)>=8 { break }
 	}
 	w.Header().Set("Cache-Control","public, max-age=600")
 	send(w,200,out)
+}
+
+// A filtered appdetails response can return an empty array instead of an object
+// for old titles without movies. Confirm with unfiltered metadata before
+// declaring that no trailer exists. Do not turn upstream failures into success.
+func parseSteamMovies(data []byte, key string) ([]steamMovie, error) {
+	var result map[string]struct {
+		Success bool `json:"success"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil { return nil, err }
+	entry, ok := result[key]
+	if !ok || !entry.Success { return nil, fmt.Errorf("Steam did not return app details") }
+	var details struct { Movies []steamMovie `json:"movies"` }
+	if len(entry.Data) == 0 || entry.Data[0] != '{' { return nil, fmt.Errorf("Steam app details not an object") }
+	if err := json.Unmarshal(entry.Data, &details); err != nil { return nil, err }
+	return details.Movies, nil
+}
+
+func fetchSteamMovies(ctx context.Context, client *http.Client, appID int64) ([]steamMovie, error) {
+	key := strconv.FormatInt(appID, 10)
+	base := "/api/appdetails?appids=" + key + "&cc=th&l=english"
+	data, err := steamFetch(ctx, client, base + "&filters=movies")
+	if err == nil {
+		movies, parseErr := parseSteamMovies(data, key)
+		if parseErr == nil { return movies, nil }
+	}
+	// The full response distinguishes an existing app with no movies from a
+	// genuinely unavailable response. Never fabricate video links.
+	data, err = steamFetch(ctx, client, base)
+	if err != nil { return nil, err }
+	return parseSteamMovies(data, key)
 }

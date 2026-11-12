@@ -503,3 +503,24 @@ func TestSteamRatingUsesPublishedGameAndSteamSummary(t *testing.T) {
 	requestJSON(t,server,"GET","/api/games/invalid/steam-rating","",nil,400,nil)
 	if calls!=1 {t.Fatalf("unexpected Steam calls: %d",calls)}
 }
+
+func TestGameTrailersConfirmsEmptyMoviesUsingFullDetails(t *testing.T) {
+	a, server := databaseAPI(t)
+	var id int64
+	if err := a.S.DB.QueryRow(context.Background(), `INSERT INTO gm_games(steam_id,title,is_published) VALUES(70,'Half-Life fixture',true) RETURNING id`).Scan(&id); err != nil { t.Fatal(err) }
+	calls := 0
+	a.SteamClient = &http.Client{Transport: roundTripFunc(func(r *http.Request)(*http.Response,error){
+		calls++
+		body := `{"70":{"success":true,"data":{"name":"Half-Life"}}}`
+		if r.URL.Query().Get("filters") == "movies" { body = `{"70":{"success":true,"data":[]}}` }
+		return &http.Response{StatusCode:200,Body:io.NopCloser(strings.NewReader(body)),Header:make(http.Header)},nil
+	})}
+	var trailers []handler.Trailer
+	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,200,&trailers)
+	if calls != 2 || trailers == nil || len(trailers) != 0 { t.Fatalf("calls=%d trailers=%#v",calls,trailers) }
+	// A real upstream failure still returns 502, never a fake empty list.
+	a.SteamClient = &http.Client{Transport: roundTripFunc(func(r *http.Request)(*http.Response,error){
+		return &http.Response{StatusCode:503,Body:io.NopCloser(strings.NewReader("offline")),Header:make(http.Header)},nil
+	})}
+	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,502,nil)
+}
