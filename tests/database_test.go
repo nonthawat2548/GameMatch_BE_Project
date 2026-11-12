@@ -481,3 +481,24 @@ func TestGameTrailerVisibility(t *testing.T) {
 	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,404,nil)
 	requestJSON(t,server,"GET","/api/games/invalid/trailers","",nil,400,nil)
 }
+
+func TestSteamRatingUsesPublishedGameAndSteamSummary(t *testing.T) {
+	a,server:=databaseAPI(t)
+	var id int64
+	err:=a.S.DB.QueryRow(context.Background(),`INSERT INTO gm_games(steam_id,title,is_published) VALUES(730,'Rating fixture',true) RETURNING id`).Scan(&id)
+	if err!=nil {t.Fatal(err)}
+	calls:=0
+	a.SteamClient=&http.Client{Transport:roundTripFunc(func(r *http.Request)(*http.Response,error){
+		calls++
+		if r.URL.Host!="store.steampowered.com" || r.URL.Path!="/appreviews/730" || r.URL.Query().Get("purchase_type")!="steam" || r.URL.Query().Get("language")!="all" || r.URL.Query().Get("num_per_page")!="1" {t.Fatalf("unexpected request: %s",r.URL)}
+		return &http.Response{StatusCode:200,Body:io.NopCloser(strings.NewReader(`{"success":1,"query_summary":{"total_positive":90,"total_negative":10,"total_reviews":100,"review_score":8,"review_score_desc":"Very Positive"},"reviews":[{"review":"private fixture"}]}`)),Header:make(http.Header)},nil
+	})}
+	path:="/api/games/"+strconv.FormatInt(id,10)+"/steam-rating"
+	var rating handler.SteamReviewSummary
+	requestJSON(t,server,"GET",path,"",nil,200,&rating)
+	if rating.PositivePercent==nil || *rating.PositivePercent!=90 || rating.Total!=100 {t.Fatalf("rating: %#v",rating)}
+	if _,err=a.S.DB.Exec(context.Background(),"UPDATE gm_games SET is_published=false WHERE id=$1",id);err!=nil {t.Fatal(err)}
+	requestJSON(t,server,"GET",path,"",nil,404,nil)
+	requestJSON(t,server,"GET","/api/games/invalid/steam-rating","",nil,400,nil)
+	if calls!=1 {t.Fatalf("unexpected Steam calls: %d",calls)}
+}
