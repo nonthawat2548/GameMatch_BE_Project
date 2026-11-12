@@ -51,6 +51,33 @@ ALTER TABLE gm_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gm_reviews ENABLE ROW LEVEL SECURITY;
 -- No client policies: deny direct anon/authenticated access. Go authorization owns access.
 REVOKE ALL ON gm_members,gm_games,gm_favorites,gm_preferences,gm_reviews FROM anon, authenticated;
+-- Normalized many-to-many genres, matching MovieHub's genre relation.
+CREATE TABLE IF NOT EXISTS gm_genres (
+ id BIGSERIAL PRIMARY KEY,
+ slug TEXT NOT NULL UNIQUE CHECK (btrim(slug) <> '')
+);
+CREATE TABLE IF NOT EXISTS gm_game_genres (
+ game_id BIGINT NOT NULL REFERENCES gm_games(id) ON DELETE CASCADE,
+ genre_id BIGINT NOT NULL REFERENCES gm_genres(id) ON DELETE RESTRICT,
+ position INTEGER NOT NULL CHECK (position > 0),
+ PRIMARY KEY (game_id,genre_id),
+ UNIQUE (game_id,position)
+);
+CREATE INDEX IF NOT EXISTS gm_game_genres_genre_idx ON gm_game_genres(genre_id);
+INSERT INTO gm_genres(slug)
+SELECT DISTINCT genre FROM gm_games CROSS JOIN LATERAL unnest(genres) AS x(genre)
+WHERE genre IS NOT NULL AND btrim(genre) <> '' ORDER BY genre
+ON CONFLICT (slug) DO NOTHING;
+INSERT INTO gm_game_genres(game_id,genre_id,position)
+SELECT g.id,d.id,min(x.pos)::integer
+FROM gm_games g CROSS JOIN LATERAL unnest(g.genres) WITH ORDINALITY AS x(genre,pos)
+JOIN gm_genres d ON d.slug=x.genre
+WHERE NOT EXISTS (SELECT 1 FROM gm_game_genres existing WHERE existing.game_id=g.id)
+GROUP BY g.id,d.id ON CONFLICT (game_id,genre_id) DO NOTHING;
+ALTER TABLE gm_genres ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gm_game_genres ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON gm_genres,gm_game_genres FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON SEQUENCE gm_genres_id_seq FROM PUBLIC,anon,authenticated;
 COMMIT;
 -- Make your registered account admin manually (replace email; no default admin password):
 -- UPDATE gm_members SET role='admin' WHERE email='your-email@example.com';

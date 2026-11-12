@@ -450,3 +450,22 @@ func TestAdminStatsUsesRealDataAndRequiresRole(t *testing.T) {
 		t.Fatalf("unexpected stats: %#v", stats)
 	}
 }
+
+func TestNormalizedGameGenres(t *testing.T) {
+	a, _ := databaseAPI(t)
+	ctx := context.Background()
+	id, err := a.S.Save(ctx, store.Game{Title: "Genre relation fixture", Published: true, Genres: []string{"rpg", "action", "rpg", " "}})
+	if err != nil { t.Fatal(err) }
+	var n int
+	if err = a.S.DB.QueryRow(ctx, "SELECT count(*) FROM gm_game_genres WHERE game_id=$1", id).Scan(&n); err != nil || n != 2 { t.Fatalf("links=%d err=%v",n,err) }
+	items, err := a.S.Games(ctx, false)
+	if err != nil || len(items) != 1 || strings.Join(items[0].Genres,",") != "rpg,action" { t.Fatalf("games=%#v err=%v",items,err) }
+	// Edit and remove relations transactionally, leaving shared genre rows intact.
+	g := items[0]
+	g.Genres = []string{"strategy"}
+	if _, err = a.S.Save(ctx,g); err != nil { t.Fatal(err) }
+	items, err = a.S.Games(ctx,false)
+	if err != nil || len(items)!=1 || strings.Join(items[0].Genres,",")!="strategy" { t.Fatalf("updated games=%#v err=%v",items,err) }
+	if _, err = a.S.DeleteGame(ctx,id); err != nil { t.Fatal(err) }
+	if err = a.S.DB.QueryRow(ctx, "SELECT count(*) FROM gm_game_genres WHERE game_id=$1", id).Scan(&n); err != nil || n != 0 { t.Fatalf("cascade links=%d err=%v",n,err) }
+}

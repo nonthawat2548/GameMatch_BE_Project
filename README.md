@@ -58,3 +58,6 @@ Manual popularity import: go run ./cmd/import-popular, with an explicitly config
 
 ### Course-aligned structure
 The handler package handles HTTP, validation and response codes. Store files handle SQL: games, members, reviews, favorites/preferences, imports and admin counts. The middleware checks JWT and DB roles. Dependency versions follow week6-lab/moviehub/go.mod. Run go test ./..., go vet ./..., go build ./...; CI uses an isolated PostgreSQL instance.
+
+### Genre relation
+`gm_genres` and `gm_game_genres` implement the MovieHub many-to-many genre model. Apply database/schema.sql to a new installation. For an existing GameMatch database, backfill links from existing genres arrays before deploying this version. The hosted GameMatch DB was migrated without dropping the legacy array. Store reads the join and writes both representations in the same transaction. Only the trusted backend needs SELECT/INSERT on gm_genres, USAGE on gm_genres_id_seq and SELECT/INSERT/DELETE on gm_game_genres; anon/authenticated are denied and both tables enable RLS. Tags and platforms remain arrays.
