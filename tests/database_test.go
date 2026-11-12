@@ -327,3 +327,54 @@ func TestDatabaseRawgSyncPreservesEditsAndRollsBack(t *testing.T) {
 		t.Fatal("missing results was reported as a successful import")
 	}
 }
+
+func TestReviewOwnershipAndLifecycle(t *testing.T) {
+	a, server := databaseAPI(t)
+	ctx := context.Background()
+	owner := registerMember(t, server, "review-owner@example.test")
+	other := registerMember(t, server, "review-other@example.test")
+	token := loginMember(t, server, "review-owner@example.test", "Password123!")
+	otherToken := loginMember(t, server, "review-other@example.test", "Password123!")
+	var gameID int64
+	if err := a.S.DB.QueryRow(ctx, "INSERT INTO gm_games(title) VALUES('Review fixture') RETURNING id").Scan(&gameID); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/games/" + strconv.FormatInt(gameID, 10) + "/reviews"
+	body := map[string]any{"rating": 5, "comment": "เกมสนุกมาก"}
+	var created struct {
+		ID int64 `json:"id"`
+		MemberID int64 `json:"memberId"`
+	}
+	requestJSON(t, server, "POST", path, "", body, 401, nil)
+	requestJSON(t, server, "POST", path, token, body, 201, &created)
+	if created.MemberID != owner || created.ID <= 0 {
+		t.Fatal("missing review owner")
+	}
+	requestJSON(t, server, "POST", path, token, body, 409, nil)
+	itemPath := path + "/" + strconv.FormatInt(created.ID, 10)
+	changed := map[string]any{"rating": 3, "comment": "Updated review"}
+	requestJSON(t, server, "PUT", itemPath, "", changed, 401, nil)
+	requestJSON(t, server, "PUT", itemPath, otherToken, changed, 404, nil)
+	requestJSON(t, server, "DELETE", itemPath, otherToken, nil, 404, nil)
+	requestJSON(t, server, "PUT", itemPath, token, changed, 200, nil)
+	var items []struct {
+		ID int64
+		MemberID int64
+		Rating int
+		Comment string
+	}
+	requestJSON(t, server, "GET", path, "", nil, 200, &items)
+	if len(items) != 1 || items[0].Rating != 3 || items[0].Comment != "Updated review" || items[0].MemberID != owner {
+		t.Fatal("updated review not persisted")
+	}
+	requestJSON(t, server, "DELETE", itemPath, token, nil, 200, nil)
+	requestJSON(t, server, "GET", path, "", nil, 200, &items)
+	if len(items) != 0 { t.Fatal("review still exists") }
+	requestJSON(t, server, "POST", path, token, body, 201, &created)
+	itemPath = path + "/" + strconv.FormatInt(created.ID, 10)
+	if _, err := a.S.DB.Exec(ctx, "UPDATE gm_members SET role='admin' WHERE id=$1", other); err != nil {
+		t.Fatal(err)
+	}
+	requestJSON(t, server, "PUT", itemPath, otherToken, changed, 404, nil)
+	requestJSON(t, server, "DELETE", itemPath, otherToken, nil, 200, nil)
+}

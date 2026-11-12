@@ -38,6 +38,7 @@ type user struct {
 	Role     string `json:"role"`
 }
 type review struct {
+	MemberID    int64     `json:"memberId"`
 	ID          int64     `json:"id"`
 	DisplayName string    `json:"displayName"`
 	Rating      int       `json:"rating"`
@@ -141,6 +142,8 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("GET /api/games/{id}", a.Detail)
 	m.HandleFunc("GET /api/games/{id}/reviews", a.Reviews)
 	m.HandleFunc("POST /api/games/{id}/reviews", a.Guard(false, a.Reviews))
+	m.HandleFunc("PUT /api/games/{id}/reviews/{reviewId}", a.Guard(false, a.Reviews))
+	m.HandleFunc("DELETE /api/games/{id}/reviews/{reviewId}", a.Guard(false, a.Reviews))
 	m.HandleFunc("POST /api/recommendations", a.Recommend)
 	m.HandleFunc("GET /api/me/favorites", a.Guard(false, a.Favorites))
 	m.HandleFunc("PUT /api/me/favorites/{id}", a.Guard(false, a.Favorite))
@@ -340,7 +343,7 @@ func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
-		rows, e := a.S.DB.Query(r.Context(), `SELECT r.id,m.display_name,r.rating,r.comment,r.created_at FROM gm_reviews r JOIN gm_members m ON m.id=r.member_id WHERE r.game_id=$1 ORDER BY r.created_at DESC,r.id DESC`, gameID)
+		rows, e := a.S.DB.Query(r.Context(), `SELECT r.id,r.member_id,m.display_name,r.rating,r.comment,r.created_at FROM gm_reviews r JOIN gm_members m ON m.id=r.member_id WHERE r.game_id=$1 ORDER BY r.created_at DESC,r.id DESC`, gameID)
 		if e != nil {
 			dbError(w, e)
 			return
@@ -349,7 +352,7 @@ func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
 		out := []review{}
 		for rows.Next() {
 			var item review
-			if e = rows.Scan(&item.ID, &item.DisplayName, &item.Rating, &item.Comment, &item.CreatedAt); e != nil {
+			if e = rows.Scan(&item.ID, &item.MemberID, &item.DisplayName, &item.Rating, &item.Comment, &item.CreatedAt); e != nil {
 				dbError(w, e)
 				return
 			}
@@ -360,6 +363,28 @@ func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		send(w, 200, out)
+		return
+	}
+	var reviewID int64
+	if r.Method == "PUT" || r.Method == "DELETE" {
+		reviewID, e = strconv.ParseInt(r.PathValue("reviewId"), 10, 64)
+		if e != nil || reviewID <= 0 {
+			fail(w, 400, "id รีวิวไม่ถูกต้อง")
+			return
+		}
+	}
+	if r.Method == "DELETE" {
+		who := current(r)
+		result, err := a.S.DB.Exec(r.Context(), `DELETE FROM gm_reviews WHERE id=$1 AND game_id=$2 AND (member_id=$3 OR $4)`, reviewID, gameID, who.ID, who.Role == "admin")
+		if err != nil {
+			dbError(w, err)
+			return
+		}
+		if result.RowsAffected() == 0 {
+			fail(w, 404, "ไม่พบรีวิวหรือไม่มีสิทธิ์ลบ")
+			return
+		}
+		send(w, 200, map[string]bool{"ok": true})
 		return
 	}
 	var b struct {
@@ -374,16 +399,25 @@ func (a *API) Reviews(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "คะแนนต้องอยู่ระหว่าง 1–5 และความคิดเห็นไม่เกิน 2000 bytes")
 		return
 	}
-	var item review
-	e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_reviews(member_id,game_id,rating,comment) VALUES($1,$2,$3,$4) RETURNING id,created_at`, current(r).ID, gameID, b.Rating, b.Comment).Scan(&item.ID, &item.CreatedAt)
+	who := current(r)
+	item := review{MemberID: who.ID, DisplayName: who.Name, Rating: b.Rating, Comment: b.Comment}
+	status := 201
+	if r.Method == "PUT" {
+		status = 200
+		e = a.S.DB.QueryRow(r.Context(), `UPDATE gm_reviews SET rating=$1,comment=$2 WHERE id=$3 AND game_id=$4 AND member_id=$5 RETURNING id,created_at`, b.Rating, b.Comment, reviewID, gameID, who.ID).Scan(&item.ID, &item.CreatedAt)
+	} else {
+		e = a.S.DB.QueryRow(r.Context(), `INSERT INTO gm_reviews(member_id,game_id,rating,comment) VALUES($1,$2,$3,$4) RETURNING id,created_at`, who.ID, gameID, b.Rating, b.Comment).Scan(&item.ID, &item.CreatedAt)
+	}
 	if e != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(e, &pgErr) && pgErr.Code == "23505" {
+			fail(w, 409, "คุณรีวิวเกมนี้ไปแล้ว")
+			return
+		}
 		dbError(w, e)
 		return
 	}
-	item.DisplayName = current(r).Name
-	item.Rating = b.Rating
-	item.Comment = b.Comment
-	send(w, 201, item)
+	send(w, status, item)
 }
 func (a *API) Recommend(w http.ResponseWriter, r *http.Request) {
 	var p recommend.Preference

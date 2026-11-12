@@ -19,7 +19,9 @@ Error ทุก handler: `{ "error": "ข้อความ" }` ยกเว้�
 | PUT | /api/me/password | Member | body currentPassword,newPassword; ยกเลิก session เดิม |
 | GET | /api/games?q=keyword | Public | Game[] ที่เผยแพร่เท่านั้น |
 | GET | /api/games/{id} | Public | Game |
-| GET/POST | /api/games/{id}/reviews | Public/Member | รีวิวของเกม; POST body rating (1-5),comment |
+| GET/POST | /api/games/{id}/reviews | Public/Member | รีวิวของเกม (memberId, rating, comment, createdAt); POST body rating (1-5),comment; ซ้ำ 409 |
+| PUT | /api/games/{id}/reviews/{reviewId} | Owner | แก้ rating,comment; 404 หากไม่ใช่เจ้าของ |
+| DELETE | /api/games/{id}/reviews/{reviewId} | Owner/Admin | ลบรีวิว; 200 {ok:true}; 404 หากไม่มีสิทธิ์ |
 | POST | /api/recommendations | Public | Game[] top5 พร้อม matchScore,reasons |
 | GET/PUT | /api/me/preferences | Member | Preference object |
 | GET | /api/me/favorites | Member | Game[] ของตนเองที่ยังเผยแพร่ |
@@ -72,3 +74,17 @@ Session ฝั่ง frontend: 401 ของ protected API ล้าง token �
 Navigation หลังล็อกอิน: หน้าที่ขอเข้าสู่ระบบส่ง pathname ผ่าน Router state.from; สลับไปสมัครสมาชิกแล้วกลับ Login ยังคงหน้าปลายทางเดิม `auth/returnPath.js` ยอมรับเฉพาะ route ภายในที่มีจริง หากเป็น URL ภายนอกหรือ state ผิดรูปแบบจะกลับหน้าแรก ไม่เปลี่ยน API contract หรือเส้นทาง authorization ของ Go
 
 Frontend routing: `/` เป็นหน้าแรก, `/discover` เป็นรายการเกม, `/about` อธิบายการใช้และแหล่งข้อมูล หน้า Home/Discover เรียก `GET /api/games` เพื่อโหลดรายการ published; ค้นหาชื่อและเลือกแนวในหน้า Discover เป็นการกรองจาก state ในเครื่อง Backend ยังรองรับ `?q=keyword` ตาม contract สำหรับผู้เรียกอื่นเหมือนเดิม ค่า return path ที่ไม่ผ่านการตรวจจะกลับ `/` (หน้าแรก)
+
+### สิทธิ์ฐานข้อมูลสำหรับระบบรีวิว (Supabase)
+
+หากใช้ role `gm_backend` ที่มีอยู่แล้ว ให้ผู้ดูแลฐานข้อมูลรัน:
+
+```sql
+ALTER TABLE public.gm_reviews ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.gm_reviews FROM anon, authenticated;
+REVOKE ALL ON SEQUENCE public.gm_reviews_id_seq FROM anon, authenticated;
+GRANT SELECT, INSERT, DELETE ON public.gm_reviews TO gm_backend;
+GRANT UPDATE (rating, comment) ON public.gm_reviews TO gm_backend;
+GRANT USAGE ON SEQUENCE public.gm_reviews_id_seq TO gm_backend;
+```
+Go Guard ตรวจ token/role และ SQL WHERE ตรวจเจ้าของทุกครั้ง ไม่รับ memberId จาก body.
