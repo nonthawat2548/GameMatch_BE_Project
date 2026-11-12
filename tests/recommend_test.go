@@ -58,3 +58,12 @@ func TestSimilarExcludesReferencesAndHiddenGames(t *testing.T) {
 		t.Fatal("no references should yield no recommendations")
 	}
 }
+
+func TestPreferenceNormalizationMatchesAllThreeFactors(t *testing.T) {
+	p := recommend.Preference{Genre: " RPG ", Mode: "SOLO", Style: "Story"}
+	if !recommend.Valid(p) { t.Fatal("valid preference should be normalized") }
+	got := recommend.Rank([]store.Game{{ID: 1, Published: true, Genres: []string{"rpg"}, Tags: []string{"singleplayer","story-rich"}}}, p)
+	if len(got) != 1 || got[0].Score != 100 {
+		t.Fatalf("normalized score should be 100: %#v", got)
+	}
+}

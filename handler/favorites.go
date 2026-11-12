@@ -68,12 +68,13 @@ func (a *API) Preferences(w http.ResponseWriter, r *http.Request) {
 			dbError(w, e)
 			return
 		}
-		send(w, 200, p)
+		send(w, 200, recommend.Normalize(p))
 		return
 	}
 	if !decode(w, r, &p) {
 		return
 	}
+	p = recommend.Normalize(p)
 	if !recommend.Valid(p) {
 		fail(w, 400, "ตัวเลือกไม่ถูกต้อง")
 		return

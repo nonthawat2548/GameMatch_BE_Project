@@ -12,6 +12,7 @@ func (a *API) Recommend(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &p) {
 		return
 	}
+	p = recommend.Normalize(p)
 	if !recommend.Valid(p) {
 		fail(w, 400, "ตัวเลือกไม่ถูกต้อง")
 		return

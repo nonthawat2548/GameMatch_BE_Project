@@ -22,10 +22,21 @@ func contains(xs []string, opts ...string) bool {
 	}
 	return false
 }
+// Normalize keeps the accepted input and saved values in the same format.
+func Normalize(p Preference) Preference {
+	return Preference{
+		Genre: strings.ToLower(strings.TrimSpace(p.Genre)),
+		Mode: strings.ToLower(strings.TrimSpace(p.Mode)),
+		Style: strings.ToLower(strings.TrimSpace(p.Style)),
+	}
+}
+
 func Valid(p Preference) bool {
+	p = Normalize(p)
 	return contains([]string{"rpg", "action", "strategy", "simulation", "adventure", "indie", "casual", "sports", "racing", "massively-multiplayer", "early-access", "free-to-play", "fps", "survival", "horror", "puzzle", "moba"}, p.Genre) && contains([]string{"solo", "coop", "pvp"}, p.Mode) && contains([]string{"story", "competitive", "relax", "challenge"}, p.Style)
 }
 func Rank(games []store.Game, p Preference) []store.Game {
+	p = Normalize(p)
 	out := []store.Game{}
 	for _, g := range games {
 		if !g.Published {
