@@ -13,7 +13,9 @@ func TestRegisterRejectsRoleAndMalformedInputBeforeDatabase(t *testing.T) {
 		`{"email":"demo@example.test","password":"Password123!","displayName":"Demo","role":"admin"}`,
 		`{"email":"bad","password":"Password123!","displayName":"Demo"}`,
 		`{"email":"demo@example.test","password":"short","displayName":"Demo"}`,
-		`{"email":"demo@example.test","password":"Password123!","displayName":"` + strings.Repeat("ก", 34) + `"}`,
+		`{"email":"demo@example.test","password":"กขค","displayName":"Demo"}`,
+		`{"username":"new-user","password":"Password123!","displayName":"Demo"}`,
+		`{"email":"demo@example.test","password":"Password123!","displayName":"` + strings.Repeat("ก", 51) + `"}`,
 		`{"email":"demo@example.test","password":"` + strings.Repeat("a", 73) + `","displayName":"Demo"}`,
 		`{} {}`, `null`, `[]`, strings.Repeat("x", (1<<20)+1),
 	} {

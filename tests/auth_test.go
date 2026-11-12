@@ -4,6 +4,7 @@ import (
 	"gamematch/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"testing"
+	"strings"
 	"time"
 )
 
@@ -51,4 +52,11 @@ func TestTokenExpiresOneHourAfterIssue(t *testing.T) {
 	if got := claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time); got != time.Hour {
 		t.Fatalf("JWT TTL = %v, want %v", got, time.Hour)
 	}
+}
+
+func TestPasswordUsesCharactersAndBytes(t *testing.T) {
+	for _, p := range []string{"กขค", "1234567", strings.Repeat("ก", 25)} {
+		if auth.ValidPassword(p) { t.Fatalf("accepted invalid password %q", p) }
+	}
+	if !auth.ValidPassword("กขคงจฉชซ") { t.Fatal("eight Thai characters should pass") }
 }

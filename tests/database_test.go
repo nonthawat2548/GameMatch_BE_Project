@@ -340,12 +340,13 @@ func TestReviewOwnershipAndLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/api/games/" + strconv.FormatInt(gameID, 10) + "/reviews"
-	body := map[string]any{"rating": 5, "comment": "เกมสนุกมาก"}
+	body := map[string]any{"rating": 5, "comment": "เกมสนุกมากเล่นกับเพื่อนได้"}
 	var created struct {
 		ID int64 `json:"id"`
 		MemberID int64 `json:"memberId"`
 	}
 	requestJSON(t, server, "POST", path, "", body, 401, nil)
+	requestJSON(t, server, "POST", path, token, map[string]any{"rating": 5, "comment": "สั้น"}, 400, nil)
 	requestJSON(t, server, "POST", path, token, body, 201, &created)
 	if created.MemberID != owner || created.ID <= 0 {
 		t.Fatal("missing review owner")
