@@ -37,14 +37,14 @@ func parseSteamReviewSummary(data []byte) (SteamReviewSummary, error) {
 	s := response.Summary
 	if s.Positive == nil || s.Negative == nil || s.Total == nil ||
 		*s.Positive < 0 || *s.Negative < 0 || *s.Total < 0 ||
-		*s.Positive > *s.Total || *s.Negative != *s.Total - *s.Positive ||
+		*s.Total > (1<<63-1)/100 || *s.Positive > *s.Total || *s.Negative != *s.Total - *s.Positive ||
 		s.Score < 0 || s.Score > 9 {
 		return SteamReviewSummary{}, fmt.Errorf("invalid Steam review counts")
 	}
 	out := SteamReviewSummary{Positive:*s.Positive, Negative:*s.Negative, Total:*s.Total, Score:s.Score, Description:s.Description}
 	if out.Total > 0 {
 		// Whole percent rounded down, as commonly displayed by Steam.
-		percent := int(float64(out.Positive) / float64(out.Total) * 100)
+		percent := int(out.Positive * 100 / out.Total)
 		out.PositivePercent = &percent
 	}
 	return out, nil

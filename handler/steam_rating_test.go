@@ -11,3 +11,8 @@ func TestSteamReviewSummary(t *testing.T) {
 		if _,err:=parseSteamReviewSummary([]byte(body));err==nil { t.Fatal("accepted invalid response") }
 	}
 }
+
+func TestSteamReviewPercentageExactInteger(t *testing.T) {
+ s,err:=parseSteamReviewSummary([]byte(`{"success":1,"query_summary":{"total_positive":58,"total_negative":42,"total_reviews":100,"review_score":5,"review_score_desc":"Mixed"}}`))
+ if err!=nil || s.PositivePercent==nil || *s.PositivePercent!=58 {t.Fatalf("summary: %#v %v",s,err)}
+}
