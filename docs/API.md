@@ -118,3 +118,5 @@ Genre JSON remains an array of slugs. PostgreSQL now stores the normalized many-
 Steam rating uses the current Steamworks IUserReviewsService/GetAppReviews/v1 endpoint, with input_json and response.query_summary; the deprecated store appreviews endpoint is no longer used.
 
 For older titles, the trailer handler retries unfiltered Steam appdetails if the filtered response is not a valid app object. A confirmed title without movies returns HTTP 200 with an empty array; genuine upstream failures return 502.
+
+- GET /api/games/{id}/metadata: published Steam game metadata, Thai-region THB price (null when unavailable), developer/publisher, screenshots, backdrop, plain-text system requirements by platform, release and CS2 major-update date. Null for non-Steam games. Trailer objects now include thumbnail. No fabricated prices/specs.

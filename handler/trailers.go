@@ -17,6 +17,7 @@ import (
 type steamMovie struct {
 	ID int64 `json:"id"`
 	Name string `json:"name"`
+	Thumbnail string `json:"thumbnail"`
 	MP4 map[string]string `json:"mp4"`
 	WebM map[string]string `json:"webm"`
 	HLS string `json:"hls_h264"`
@@ -30,6 +31,7 @@ type Trailer struct {
 	Title string `json:"title"`
 	Sources []string `json:"sources"`
 	Preview bool `json:"preview"`
+	Thumbnail string `json:"thumbnail"`
 }
 
 // Only allow Steam-controlled video hosts. Never proxy arbitrary URLs.
@@ -47,7 +49,7 @@ func steamVideoURL(raw string) string {
 var adaptiveTrailerPath = regexp.MustCompile(`^/store_trailers/([0-9]+)/[0-9]+/[a-fA-F0-9]{40}/[0-9]+/(hls_264_master\.m3u8|dash_h264\.mpd|dash_av1\.mpd)$`)
 
 func movieSources(movie steamMovie, appID int64) Trailer {
-	t := Trailer{ID: movie.ID, Title: movie.Name, Sources: []string{}}
+	t := Trailer{ID: movie.ID, Title: movie.Name, Sources: []string{}, Thumbnail: steamImageURL(movie.Thumbnail)}
 	if strings.TrimSpace(t.Title) == "" { t.Title = "ตัวอย่างเกม" }
 	seen := map[string]bool{}
 	add := func(value string) {

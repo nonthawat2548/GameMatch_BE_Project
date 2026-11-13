@@ -82,6 +82,7 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("GET /api/games", a.Games)
 	m.HandleFunc("GET /api/games/{id}", a.Detail)
 	m.HandleFunc("GET /api/games/{id}/trailers", a.GameTrailers)
+	m.HandleFunc("GET /api/games/{id}/metadata", a.GameMetadata)
 	m.HandleFunc("GET /api/games/{id}/steam-rating", a.SteamRating)
 	m.HandleFunc("GET /api/games/{id}/reviews", a.Reviews)
 	m.HandleFunc("POST /api/games/{id}/reviews", a.Guard(false, a.Reviews))
