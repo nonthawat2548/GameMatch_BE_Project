@@ -78,6 +78,15 @@ ALTER TABLE gm_genres ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gm_game_genres ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON gm_genres,gm_game_genres FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON SEQUENCE gm_genres_id_seq FROM PUBLIC,anon,authenticated;
+CREATE TABLE IF NOT EXISTS gm_review_votes (
+ review_id BIGINT NOT NULL REFERENCES gm_reviews(id) ON DELETE CASCADE,
+ member_id BIGINT NOT NULL REFERENCES gm_members(id) ON DELETE CASCADE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(review_id,member_id)
+);
+CREATE INDEX IF NOT EXISTS gm_review_votes_member_idx ON gm_review_votes(member_id);
+ALTER TABLE gm_review_votes ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON gm_review_votes FROM PUBLIC,anon,authenticated;
 COMMIT;
 -- Make your registered account admin manually (replace email; no default admin password):
 -- UPDATE gm_members SET role='admin' WHERE email='your-email@example.com';

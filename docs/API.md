@@ -120,3 +120,5 @@ Steam rating uses the current Steamworks IUserReviewsService/GetAppReviews/v1 en
 For older titles, the trailer handler retries unfiltered Steam appdetails if the filtered response is not a valid app object. A confirmed title without movies returns HTTP 200 with an empty array; genuine upstream failures return 502.
 
 - GET /api/games/{id}/metadata: published Steam game metadata, Thai-region THB price (null when unavailable), developer/publisher, screenshots, backdrop, plain-text system requirements by platform, release and CS2 major-update date. Null for non-Steam games. Trailer objects now include thumbnail. No fabricated prices/specs.
+
+- Public review list returns helpfulCount. Authenticated GET /api/me/review-votes/{id} returns review IDs voted by the member; PUT/DELETE /api/games/{id}/reviews/{reviewId}/helpful adds/removes one helpful vote, returning helpfulCount and voted. Own reviews cannot be voted on; game must be published. Composite primary key prevents duplicate votes. Production migration grants only SELECT,INSERT,DELETE to gm_backend; direct Data API denied.

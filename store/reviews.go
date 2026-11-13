@@ -12,16 +12,17 @@ type Review struct {
 	Rating      int       `json:"rating"`
 	Comment     string    `json:"comment"`
 	CreatedAt   time.Time `json:"createdAt"`
+	HelpfulCount int64 `json:"helpfulCount"`
 }
 
 func (s *Store) ListReviews(ctx context.Context, gameID int64) ([]Review, error) {
-	rows, err := s.DB.Query(ctx, `SELECT r.id,r.member_id,m.display_name,r.rating,r.comment,r.created_at FROM gm_reviews r JOIN gm_members m ON m.id=r.member_id WHERE r.game_id=$1 ORDER BY r.created_at DESC,r.id DESC`, gameID)
+	rows, err := s.DB.Query(ctx, `SELECT r.id,r.member_id,m.display_name,r.rating,r.comment,r.created_at,(SELECT count(*) FROM gm_review_votes v WHERE v.review_id=r.id) FROM gm_reviews r JOIN gm_members m ON m.id=r.member_id WHERE r.game_id=$1 ORDER BY r.created_at DESC,r.id DESC`, gameID)
 	if err != nil { return nil, err }
 	defer rows.Close()
 	out := []Review{}
 	for rows.Next() {
 		var item Review
-		if err = rows.Scan(&item.ID, &item.MemberID, &item.DisplayName, &item.Rating, &item.Comment, &item.CreatedAt); err != nil { return nil, err }
+		if err = rows.Scan(&item.ID, &item.MemberID, &item.DisplayName, &item.Rating, &item.Comment, &item.CreatedAt, &item.HelpfulCount); err != nil { return nil, err }
 		out = append(out, item)
 	}
 	return out, rows.Err()

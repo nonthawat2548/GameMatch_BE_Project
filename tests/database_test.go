@@ -524,3 +524,29 @@ func TestGameTrailersConfirmsEmptyMoviesUsingFullDetails(t *testing.T) {
 	})}
 	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,502,nil)
 }
+
+func TestReviewHelpfulVotes(t *testing.T) {
+ a,server:=databaseAPI(t)
+ registerMember(t,server,"vote-owner@example.test")
+ registerMember(t,server,"vote-reader@example.test")
+ owner:=loginMember(t,server,"vote-owner@example.test","Password123!")
+ reader:=loginMember(t,server,"vote-reader@example.test","Password123!")
+ id,e:=a.S.Save(context.Background(),store.Game{Title:"Vote fixture",Published:true})
+ if e!=nil{t.Fatal(e)}
+ base:="/api/games/"+strconv.FormatInt(id,10)+"/reviews"
+ var item store.Review
+ requestJSON(t,server,"POST",base,owner,map[string]any{"rating":5,"comment":"A genuine test review fixture"},201,&item)
+ path:=base+"/"+strconv.FormatInt(item.ID,10)+"/helpful"
+ requestJSON(t,server,"PUT",path,"",nil,401,nil)
+ requestJSON(t,server,"PUT",path,owner,nil,400,nil)
+ var result struct{HelpfulCount int64 `json:"helpfulCount"`;Voted bool `json:"voted"`}
+ for i:=0;i<2;i++{requestJSON(t,server,"PUT",path,reader,nil,200,&result);if result.HelpfulCount!=1||!result.Voted{t.Fatalf("vote: %#v",result)}}
+ var ids []int64
+ requestJSON(t,server,"GET","/api/me/review-votes/"+strconv.FormatInt(id,10),reader,nil,200,&ids)
+ if len(ids)!=1||ids[0]!=item.ID{t.Fatalf("ids: %#v",ids)}
+ var list []store.Review
+ requestJSON(t,server,"GET",base,"",nil,200,&list)
+ if len(list)!=1||list[0].HelpfulCount!=1{t.Fatalf("list: %#v",list)}
+ requestJSON(t,server,"DELETE",path,reader,nil,200,&result)
+ if result.HelpfulCount!=0||result.Voted{t.Fatalf("undo: %#v",result)}
+}
