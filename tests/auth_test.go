@@ -1,0 +1,66 @@
+package tests
+
+import (
+	"gamematch/auth"
+	"github.com/golang-jwt/jwt/v5"
+	"strings"
+	"testing"
+	"time"
+)
+
+const secret = "test-secret-at-least-32-characters-long"
+
+func TestTokenRoundTrip(t *testing.T) {
+	token, e := auth.Issue(secret, 42, 3)
+	if e != nil {
+		t.Fatal(e)
+	}
+	claims, e := auth.Parse(secret, token)
+	if e != nil || claims.ID != 42 || claims.Version != 3 {
+		t.Fatalf("claims=%#v error=%v", claims, e)
+	}
+}
+func TestWrongKeyAndExpired(t *testing.T) {
+	token, _ := auth.Issue(secret, 1, 0)
+	if _, e := auth.Parse("different-secret", token); e == nil {
+		t.Fatal("accepted wrong signature")
+	}
+	expired, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, auth.Claims{ID: 1, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Minute)), Issuer: "gamematch"}}).SignedString([]byte(secret))
+	if _, e := auth.Parse(secret, expired); e == nil {
+		t.Fatal("accepted expired token")
+	}
+}
+func TestRejectUnexpectedSigningMethod(t *testing.T) {
+	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS384, jwt.MapClaims{"uid": 1, "exp": time.Now().Add(time.Hour).Unix(), "iss": "gamematch"}).SignedString([]byte(secret))
+	if _, e := auth.Parse(secret, token); e == nil {
+		t.Fatal("accepted HS384")
+	}
+}
+
+func TestTokenExpiresOneHourAfterIssue(t *testing.T) {
+	token, err := auth.Issue(secret, 42, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := auth.Parse(secret, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.IssuedAt == nil || claims.ExpiresAt == nil {
+		t.Fatal("missing issued-at or expiry")
+	}
+	if got := claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time); got != time.Hour {
+		t.Fatalf("JWT TTL = %v, want %v", got, time.Hour)
+	}
+}
+
+func TestPasswordUsesCharactersAndBytes(t *testing.T) {
+	for _, p := range []string{"กขค", "1234567", strings.Repeat("ก", 25)} {
+		if auth.ValidPassword(p) {
+			t.Fatalf("accepted invalid password %q", p)
+		}
+	}
+	if !auth.ValidPassword("กขคงจฉชซ") {
+		t.Fatal("eight Thai characters should pass")
+	}
+}
