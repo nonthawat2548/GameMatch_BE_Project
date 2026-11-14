@@ -1,12 +1,12 @@
 package handler
 
 import (
-	"github.com/jackc/pgx/v5"
 	"context"
 	"encoding/json"
 	"errors"
 	"gamematch/mw"
 	"gamematch/store"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"io"
 	"log"
@@ -88,9 +88,9 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("POST /api/games/{id}/reviews", a.Guard(false, a.Reviews))
 	m.HandleFunc("PUT /api/games/{id}/reviews/{reviewId}", a.Guard(false, a.Reviews))
 	m.HandleFunc("DELETE /api/games/{id}/reviews/{reviewId}", a.Guard(false, a.Reviews))
-	m.HandleFunc("GET /api/me/review-votes/{id}", a.Guard(false,a.ReviewVoteIDs))
-	m.HandleFunc("PUT /api/games/{id}/reviews/{reviewId}/helpful", a.Guard(false,a.ReviewVote))
-	m.HandleFunc("DELETE /api/games/{id}/reviews/{reviewId}/helpful", a.Guard(false,a.ReviewVote))
+	m.HandleFunc("GET /api/me/review-votes/{id}", a.Guard(false, a.ReviewVoteIDs))
+	m.HandleFunc("PUT /api/games/{id}/reviews/{reviewId}/helpful", a.Guard(false, a.ReviewVote))
+	m.HandleFunc("DELETE /api/games/{id}/reviews/{reviewId}/helpful", a.Guard(false, a.ReviewVote))
 	m.HandleFunc("POST /api/recommendations", a.Recommend)
 	m.HandleFunc("GET /api/games/{id}/similar", a.SimilarGames)
 	m.HandleFunc("GET /api/me/recommendations", a.Guard(false, a.Favorites))

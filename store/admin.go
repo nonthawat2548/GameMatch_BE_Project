@@ -3,11 +3,11 @@ package store
 import "context"
 
 type AdminStats struct {
-	Games int `json:"games"`
+	Games     int `json:"games"`
 	Published int `json:"published"`
-	Members int `json:"members"`
-	Admins int `json:"admins"`
-	Reviews int `json:"reviews"`
+	Members   int `json:"members"`
+	Admins    int `json:"admins"`
+	Reviews   int `json:"reviews"`
 }
 
 func (s *Store) Stats(ctx context.Context) (AdminStats, error) {

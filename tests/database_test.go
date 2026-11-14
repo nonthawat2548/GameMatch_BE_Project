@@ -342,7 +342,7 @@ func TestReviewOwnershipAndLifecycle(t *testing.T) {
 	path := "/api/games/" + strconv.FormatInt(gameID, 10) + "/reviews"
 	body := map[string]any{"rating": 5, "comment": "เกมสนุกมากเล่นกับเพื่อนได้"}
 	var created struct {
-		ID int64 `json:"id"`
+		ID       int64 `json:"id"`
 		MemberID int64 `json:"memberId"`
 	}
 	requestJSON(t, server, "POST", path, "", body, 401, nil)
@@ -359,10 +359,10 @@ func TestReviewOwnershipAndLifecycle(t *testing.T) {
 	requestJSON(t, server, "DELETE", itemPath, otherToken, nil, 404, nil)
 	requestJSON(t, server, "PUT", itemPath, token, changed, 200, nil)
 	var items []struct {
-		ID int64
+		ID       int64
 		MemberID int64
-		Rating int
-		Comment string
+		Rating   int
+		Comment  string
 	}
 	requestJSON(t, server, "GET", path, "", nil, 200, &items)
 	if len(items) != 1 || items[0].Rating != 3 || items[0].Comment != "Updated review" || items[0].MemberID != owner {
@@ -370,7 +370,9 @@ func TestReviewOwnershipAndLifecycle(t *testing.T) {
 	}
 	requestJSON(t, server, "DELETE", itemPath, token, nil, 200, nil)
 	requestJSON(t, server, "GET", path, "", nil, 200, &items)
-	if len(items) != 0 { t.Fatal("review still exists") }
+	if len(items) != 0 {
+		t.Fatal("review still exists")
+	}
 	requestJSON(t, server, "POST", path, token, body, 201, &created)
 	itemPath = path + "/" + strconv.FormatInt(created.ID, 10)
 	if _, err := a.S.DB.Exec(ctx, "UPDATE gm_members SET role='admin' WHERE id=$1", other); err != nil {
@@ -439,7 +441,9 @@ func TestAdminStatsUsesRealDataAndRequiresRole(t *testing.T) {
 	a, server := databaseAPI(t)
 	id := registerMember(t, server, "stats-admin@example.test")
 	registerMember(t, server, "stats-member@example.test")
-	if _, err := a.S.DB.Exec(context.Background(), "UPDATE gm_members SET role='admin' WHERE id=$1", id); err != nil { t.Fatal(err) }
+	if _, err := a.S.DB.Exec(context.Background(), "UPDATE gm_members SET role='admin' WHERE id=$1", id); err != nil {
+		t.Fatal(err)
+	}
 	admin := loginMember(t, server, "stats-admin@example.test", "Password123!")
 	member := loginMember(t, server, "stats-member@example.test", "Password123!")
 	requestJSON(t, server, "GET", "/api/admin/stats", "", nil, 401, nil)
@@ -455,98 +459,155 @@ func TestNormalizedGameGenres(t *testing.T) {
 	a, _ := databaseAPI(t)
 	ctx := context.Background()
 	id, err := a.S.Save(ctx, store.Game{Title: "Genre relation fixture", Published: true, Genres: []string{"rpg", "action", "rpg", " "}})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var n int
-	if err = a.S.DB.QueryRow(ctx, "SELECT count(*) FROM gm_game_genres WHERE game_id=$1", id).Scan(&n); err != nil || n != 2 { t.Fatalf("links=%d err=%v",n,err) }
+	if err = a.S.DB.QueryRow(ctx, "SELECT count(*) FROM gm_game_genres WHERE game_id=$1", id).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("links=%d err=%v", n, err)
+	}
 	items, err := a.S.Games(ctx, false)
-	if err != nil || len(items) != 1 || strings.Join(items[0].Genres,",") != "rpg,action" { t.Fatalf("games=%#v err=%v",items,err) }
+	if err != nil || len(items) != 1 || strings.Join(items[0].Genres, ",") != "rpg,action" {
+		t.Fatalf("games=%#v err=%v", items, err)
+	}
 	// Edit and remove relations transactionally, leaving shared genre rows intact.
 	g := items[0]
 	g.Genres = []string{"strategy"}
-	if _, err = a.S.Save(ctx,g); err != nil { t.Fatal(err) }
-	items, err = a.S.Games(ctx,false)
-	if err != nil || len(items)!=1 || strings.Join(items[0].Genres,",")!="strategy" { t.Fatalf("updated games=%#v err=%v",items,err) }
-	if _, err = a.S.DeleteGame(ctx,id); err != nil { t.Fatal(err) }
-	if err = a.S.DB.QueryRow(ctx, "SELECT count(*) FROM gm_game_genres WHERE game_id=$1", id).Scan(&n); err != nil || n != 0 { t.Fatalf("cascade links=%d err=%v",n,err) }
+	if _, err = a.S.Save(ctx, g); err != nil {
+		t.Fatal(err)
+	}
+	items, err = a.S.Games(ctx, false)
+	if err != nil || len(items) != 1 || strings.Join(items[0].Genres, ",") != "strategy" {
+		t.Fatalf("updated games=%#v err=%v", items, err)
+	}
+	if _, err = a.S.DeleteGame(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.S.DB.QueryRow(ctx, "SELECT count(*) FROM gm_game_genres WHERE game_id=$1", id).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("cascade links=%d err=%v", n, err)
+	}
 }
 
 func TestGameTrailerVisibility(t *testing.T) {
 	a, server := databaseAPI(t)
-	id, err := a.S.Save(context.Background(),store.Game{Title:"No external source",Published:true})
-	if err != nil { t.Fatal(err) }
+	id, err := a.S.Save(context.Background(), store.Game{Title: "No external source", Published: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var trailers []handler.Trailer
-	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,200,&trailers)
-	if trailers==nil || len(trailers)!=0 { t.Fatalf("expected empty trailer list: %#v",trailers) }
-	if _,err=a.S.DB.Exec(context.Background(),"UPDATE gm_games SET is_published=false WHERE id=$1",id); err!=nil { t.Fatal(err) }
-	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,404,nil)
-	requestJSON(t,server,"GET","/api/games/invalid/trailers","",nil,400,nil)
+	requestJSON(t, server, "GET", "/api/games/"+strconv.FormatInt(id, 10)+"/trailers", "", nil, 200, &trailers)
+	if trailers == nil || len(trailers) != 0 {
+		t.Fatalf("expected empty trailer list: %#v", trailers)
+	}
+	if _, err = a.S.DB.Exec(context.Background(), "UPDATE gm_games SET is_published=false WHERE id=$1", id); err != nil {
+		t.Fatal(err)
+	}
+	requestJSON(t, server, "GET", "/api/games/"+strconv.FormatInt(id, 10)+"/trailers", "", nil, 404, nil)
+	requestJSON(t, server, "GET", "/api/games/invalid/trailers", "", nil, 400, nil)
 }
 
 func TestSteamRatingUsesPublishedGameAndSteamSummary(t *testing.T) {
-	a,server:=databaseAPI(t)
+	a, server := databaseAPI(t)
 	var id int64
-	err:=a.S.DB.QueryRow(context.Background(),`INSERT INTO gm_games(steam_id,title,is_published) VALUES(730,'Rating fixture',true) RETURNING id`).Scan(&id)
-	if err!=nil {t.Fatal(err)}
-	calls:=0
-	a.SteamClient=&http.Client{Transport:roundTripFunc(func(r *http.Request)(*http.Response,error){
+	err := a.S.DB.QueryRow(context.Background(), `INSERT INTO gm_games(steam_id,title,is_published) VALUES(730,'Rating fixture',true) RETURNING id`).Scan(&id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	a.SteamClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
-		var input struct { AppID int64 `json:"appid"`; PurchaseType int `json:"purchase_type"`; Languages []string `json:"languages"`; NumPerPage int `json:"num_per_page"` }
-		if r.URL.Host!="api.steampowered.com" || r.URL.Path!="/IUserReviewsService/GetAppReviews/v1/" || json.Unmarshal([]byte(r.URL.Query().Get("input_json")),&input)!=nil || input.AppID!=730 || input.PurchaseType!=0 || len(input.Languages)!=1 || input.Languages[0]!="all" || input.NumPerPage!=1 {t.Fatalf("unexpected request: %s",r.URL)}
-		return &http.Response{StatusCode:200,Body:io.NopCloser(strings.NewReader(`{"response":{"query_summary":{"total_positive":90,"total_negative":10,"total_reviews":100,"review_score":8,"review_score_desc":"Very Positive"},"reviews":[{"review":"private fixture"}]}}`)),Header:make(http.Header)},nil
+		var input struct {
+			AppID        int64    `json:"appid"`
+			PurchaseType int      `json:"purchase_type"`
+			Languages    []string `json:"languages"`
+			NumPerPage   int      `json:"num_per_page"`
+		}
+		if r.URL.Host != "api.steampowered.com" || r.URL.Path != "/IUserReviewsService/GetAppReviews/v1/" || json.Unmarshal([]byte(r.URL.Query().Get("input_json")), &input) != nil || input.AppID != 730 || input.PurchaseType != 0 || len(input.Languages) != 1 || input.Languages[0] != "all" || input.NumPerPage != 1 {
+			t.Fatalf("unexpected request: %s", r.URL)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"response":{"query_summary":{"total_positive":90,"total_negative":10,"total_reviews":100,"review_score":8,"review_score_desc":"Very Positive"},"reviews":[{"review":"private fixture"}]}}`)), Header: make(http.Header)}, nil
 	})}
-	path:="/api/games/"+strconv.FormatInt(id,10)+"/steam-rating"
+	path := "/api/games/" + strconv.FormatInt(id, 10) + "/steam-rating"
 	var rating handler.SteamReviewSummary
-	requestJSON(t,server,"GET",path,"",nil,200,&rating)
-	if rating.PositivePercent==nil || *rating.PositivePercent!=90 || rating.Total!=100 {t.Fatalf("rating: %#v",rating)}
-	if _,err=a.S.DB.Exec(context.Background(),"UPDATE gm_games SET is_published=false WHERE id=$1",id);err!=nil {t.Fatal(err)}
-	requestJSON(t,server,"GET",path,"",nil,404,nil)
-	requestJSON(t,server,"GET","/api/games/invalid/steam-rating","",nil,400,nil)
-	if calls!=1 {t.Fatalf("unexpected Steam calls: %d",calls)}
+	requestJSON(t, server, "GET", path, "", nil, 200, &rating)
+	if rating.PositivePercent == nil || *rating.PositivePercent != 90 || rating.Total != 100 {
+		t.Fatalf("rating: %#v", rating)
+	}
+	if _, err = a.S.DB.Exec(context.Background(), "UPDATE gm_games SET is_published=false WHERE id=$1", id); err != nil {
+		t.Fatal(err)
+	}
+	requestJSON(t, server, "GET", path, "", nil, 404, nil)
+	requestJSON(t, server, "GET", "/api/games/invalid/steam-rating", "", nil, 400, nil)
+	if calls != 1 {
+		t.Fatalf("unexpected Steam calls: %d", calls)
+	}
 }
 
 func TestGameTrailersConfirmsEmptyMoviesUsingFullDetails(t *testing.T) {
 	a, server := databaseAPI(t)
 	var id int64
-	if err := a.S.DB.QueryRow(context.Background(), `INSERT INTO gm_games(steam_id,title,is_published) VALUES(70,'Half-Life fixture',true) RETURNING id`).Scan(&id); err != nil { t.Fatal(err) }
+	if err := a.S.DB.QueryRow(context.Background(), `INSERT INTO gm_games(steam_id,title,is_published) VALUES(70,'Half-Life fixture',true) RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
 	calls := 0
-	a.SteamClient = &http.Client{Transport: roundTripFunc(func(r *http.Request)(*http.Response,error){
+	a.SteamClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
 		body := `{"70":{"success":true,"data":{"name":"Half-Life"}}}`
-		if r.URL.Query().Get("filters") == "movies" { body = `{"70":{"success":true,"data":[]}}` }
-		return &http.Response{StatusCode:200,Body:io.NopCloser(strings.NewReader(body)),Header:make(http.Header)},nil
+		if r.URL.Query().Get("filters") == "movies" {
+			body = `{"70":{"success":true,"data":[]}}`
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})}
 	var trailers []handler.Trailer
-	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,200,&trailers)
-	if calls != 2 || trailers == nil || len(trailers) != 0 { t.Fatalf("calls=%d trailers=%#v",calls,trailers) }
+	requestJSON(t, server, "GET", "/api/games/"+strconv.FormatInt(id, 10)+"/trailers", "", nil, 200, &trailers)
+	if calls != 2 || trailers == nil || len(trailers) != 0 {
+		t.Fatalf("calls=%d trailers=%#v", calls, trailers)
+	}
 	// A real upstream failure still returns 502, never a fake empty list.
-	a.SteamClient = &http.Client{Transport: roundTripFunc(func(r *http.Request)(*http.Response,error){
-		return &http.Response{StatusCode:503,Body:io.NopCloser(strings.NewReader("offline")),Header:make(http.Header)},nil
+	a.SteamClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 503, Body: io.NopCloser(strings.NewReader("offline")), Header: make(http.Header)}, nil
 	})}
-	requestJSON(t,server,"GET","/api/games/"+strconv.FormatInt(id,10)+"/trailers","",nil,502,nil)
+	requestJSON(t, server, "GET", "/api/games/"+strconv.FormatInt(id, 10)+"/trailers", "", nil, 502, nil)
 }
 
 func TestReviewHelpfulVotes(t *testing.T) {
- a,server:=databaseAPI(t)
- registerMember(t,server,"vote-owner@example.test")
- registerMember(t,server,"vote-reader@example.test")
- owner:=loginMember(t,server,"vote-owner@example.test","Password123!")
- reader:=loginMember(t,server,"vote-reader@example.test","Password123!")
- id,e:=a.S.Save(context.Background(),store.Game{Title:"Vote fixture",Published:true})
- if e!=nil{t.Fatal(e)}
- base:="/api/games/"+strconv.FormatInt(id,10)+"/reviews"
- var item store.Review
- requestJSON(t,server,"POST",base,owner,map[string]any{"rating":5,"comment":"A genuine test review fixture"},201,&item)
- path:=base+"/"+strconv.FormatInt(item.ID,10)+"/helpful"
- requestJSON(t,server,"PUT",path,"",nil,401,nil)
- requestJSON(t,server,"PUT",path,owner,nil,400,nil)
- var result struct{HelpfulCount int64 `json:"helpfulCount"`;Voted bool `json:"voted"`}
- for i:=0;i<2;i++{requestJSON(t,server,"PUT",path,reader,nil,200,&result);if result.HelpfulCount!=1||!result.Voted{t.Fatalf("vote: %#v",result)}}
- var ids []int64
- requestJSON(t,server,"GET","/api/me/review-votes/"+strconv.FormatInt(id,10),reader,nil,200,&ids)
- if len(ids)!=1||ids[0]!=item.ID{t.Fatalf("ids: %#v",ids)}
- var list []store.Review
- requestJSON(t,server,"GET",base,"",nil,200,&list)
- if len(list)!=1||list[0].HelpfulCount!=1{t.Fatalf("list: %#v",list)}
- requestJSON(t,server,"DELETE",path,reader,nil,200,&result)
- if result.HelpfulCount!=0||result.Voted{t.Fatalf("undo: %#v",result)}
+	a, server := databaseAPI(t)
+	registerMember(t, server, "vote-owner@example.test")
+	registerMember(t, server, "vote-reader@example.test")
+	owner := loginMember(t, server, "vote-owner@example.test", "Password123!")
+	reader := loginMember(t, server, "vote-reader@example.test", "Password123!")
+	id, e := a.S.Save(context.Background(), store.Game{Title: "Vote fixture", Published: true})
+	if e != nil {
+		t.Fatal(e)
+	}
+	base := "/api/games/" + strconv.FormatInt(id, 10) + "/reviews"
+	var item store.Review
+	requestJSON(t, server, "POST", base, owner, map[string]any{"rating": 5, "comment": "A genuine test review fixture"}, 201, &item)
+	path := base + "/" + strconv.FormatInt(item.ID, 10) + "/helpful"
+	requestJSON(t, server, "PUT", path, "", nil, 401, nil)
+	requestJSON(t, server, "PUT", path, owner, nil, 400, nil)
+	var result struct {
+		HelpfulCount int64 `json:"helpfulCount"`
+		Voted        bool  `json:"voted"`
+	}
+	for i := 0; i < 2; i++ {
+		requestJSON(t, server, "PUT", path, reader, nil, 200, &result)
+		if result.HelpfulCount != 1 || !result.Voted {
+			t.Fatalf("vote: %#v", result)
+		}
+	}
+	var ids []int64
+	requestJSON(t, server, "GET", "/api/me/review-votes/"+strconv.FormatInt(id, 10), reader, nil, 200, &ids)
+	if len(ids) != 1 || ids[0] != item.ID {
+		t.Fatalf("ids: %#v", ids)
+	}
+	var list []store.Review
+	requestJSON(t, server, "GET", base, "", nil, 200, &list)
+	if len(list) != 1 || list[0].HelpfulCount != 1 {
+		t.Fatalf("list: %#v", list)
+	}
+	requestJSON(t, server, "DELETE", path, reader, nil, 200, &result)
+	if result.HelpfulCount != 0 || result.Voted {
+		t.Fatalf("undo: %#v", result)
+	}
 }

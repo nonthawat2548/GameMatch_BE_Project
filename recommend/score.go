@@ -22,11 +22,12 @@ func contains(xs []string, opts ...string) bool {
 	}
 	return false
 }
+
 // Normalize keeps the accepted input and saved values in the same format.
 func Normalize(p Preference) Preference {
 	return Preference{
 		Genre: strings.ToLower(strings.TrimSpace(p.Genre)),
-		Mode: strings.ToLower(strings.TrimSpace(p.Mode)),
+		Mode:  strings.ToLower(strings.TrimSpace(p.Mode)),
 		Style: strings.ToLower(strings.TrimSpace(p.Style)),
 	}
 }
@@ -108,13 +109,13 @@ func Similar(games []store.Game, references []store.Game) []store.Game {
 				best = points
 				reasons = []string{"คล้ายกับ " + ref.Title}
 				if len(genres) > 0 {
-					reasons = append(reasons, "แนวเกมร่วม: " + strings.Join(genres, ", "))
+					reasons = append(reasons, "แนวเกมร่วม: "+strings.Join(genres, ", "))
 				}
 				if len(tags) > 0 {
 					if len(tags) > 6 {
 						tags = tags[:6]
 					}
-					reasons = append(reasons, "แท็กร่วม: " + strings.Join(tags, ", "))
+					reasons = append(reasons, "แท็กร่วม: "+strings.Join(tags, ", "))
 				}
 			}
 		}

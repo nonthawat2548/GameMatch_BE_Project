@@ -30,16 +30,15 @@ func (a *API) SimilarGames(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "id ไม่ถูกต้อง")
 		return
 	}
+	reference, err := a.S.PublishedGame(r.Context(), id)
+	if err != nil {
+		dbError(w, err)
+		return
+	}
 	games, err := a.S.Games(r.Context(), false)
 	if err != nil {
 		dbError(w, err)
 		return
 	}
-	for _, g := range games {
-		if g.ID == id {
-			send(w, 200, recommend.Similar(games, []store.Game{g}))
-			return
-		}
-	}
-	fail(w, 404, "ไม่พบเกม")
+	send(w, 200, recommend.Similar(games, []store.Game{reference}))
 }

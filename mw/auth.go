@@ -14,6 +14,7 @@ import (
 )
 
 type authKey int
+
 const memberKey authKey = 1
 
 func CurrentMember(ctx context.Context) (store.Member, bool) {

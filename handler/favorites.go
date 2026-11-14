@@ -1,32 +1,25 @@
 package handler
 
 import (
-	"github.com/jackc/pgx/v5"
 	"errors"
 	"gamematch/recommend"
-	"gamematch/store"
+	"github.com/jackc/pgx/v5"
 	"net/http"
 	"strconv"
 )
 
 func (a *API) Favorites(w http.ResponseWriter, r *http.Request) {
-	ids, e := a.S.FavoriteIDs(r.Context(), current(r).ID)
+	out, e := a.S.FavoriteGames(r.Context(), current(r).ID)
 	if e != nil {
 		dbError(w, e)
 		return
-	}
-	games, e := a.S.Games(r.Context(), false)
-	if e != nil {
-		dbError(w, e)
-		return
-	}
-	out := []store.Game{}
-	for _, g := range games {
-		if ids[g.ID] {
-			out = append(out, g)
-		}
 	}
 	if r.URL.Path == "/api/me/recommendations" {
+		games, e := a.S.Games(r.Context(), false)
+		if e != nil {
+			dbError(w, e)
+			return
+		}
 		send(w, 200, recommend.Similar(games, out))
 		return
 	}
@@ -63,7 +56,9 @@ func (a *API) Preferences(w http.ResponseWriter, r *http.Request) {
 	p := recommend.Preference{Genre: "rpg", Mode: "solo", Style: "story"}
 	if r.Method == "GET" {
 		genre, mode, style, e := a.S.MemberPreferences(r.Context(), current(r).ID)
-		if e == nil { p.Genre, p.Mode, p.Style = genre, mode, style }
+		if e == nil {
+			p.Genre, p.Mode, p.Style = genre, mode, style
+		}
 		if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 			dbError(w, e)
 			return

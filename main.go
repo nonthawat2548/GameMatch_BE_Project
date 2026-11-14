@@ -21,9 +21,9 @@ func main() {
 	if err := config.LoadEnv(".env"); err != nil {
 		log.Fatal("Cannot load .env: check file permissions and syntax")
 	}
-	secret := os.Getenv("JWT_SECRET")
-	if len(secret) < 32 {
-		log.Fatal("JWT_SECRET must contain at least 32 characters")
+	secret, err := config.LoadJWTSecret(".jwt_secret")
+	if err != nil {
+		log.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -57,8 +57,8 @@ func main() {
 	server := &http.Server{Addr: ":" + port, Handler: mw.CORS(origins, a.Routes()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		log.Println("GameMatch API listening on :" + port)
-		if e = server.ListenAndServe(); e != nil && !errors.Is(e, http.ErrServerClosed) {
-			log.Fatal(e)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
 		}
 	}()
 	stop := make(chan os.Signal, 1)
@@ -66,5 +66,7 @@ func main() {
 	<-stop
 	shutdown, done := context.WithTimeout(context.Background(), 10*time.Second)
 	defer done()
-	server.Shutdown(shutdown)
+	if err := server.Shutdown(shutdown); err != nil {
+		log.Printf("Graceful shutdown failed: %v", err)
+	}
 }

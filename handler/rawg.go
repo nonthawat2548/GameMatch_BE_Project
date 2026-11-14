@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"gamematch/store"
 	"context"
 	"encoding/json"
+	"gamematch/store"
 	"io"
 	"net/http"
 	"net/url"

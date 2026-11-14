@@ -24,7 +24,7 @@ func Parse(secret, token string) (*Claims, error) {
 		}
 		return []byte(secret), nil
 	}, jwt.WithExpirationRequired(), jwt.WithIssuer("gamematch"))
-	if e != nil || !t.Valid {
+	if e != nil || t == nil || !t.Valid || c.ID <= 0 || c.Version < 0 {
 		return nil, fmt.Errorf("invalid token")
 	}
 	return c, nil

@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"gamematch/store"
 	"errors"
+	"gamematch/store"
 	"github.com/jackc/pgx/v5/pgconn"
 	"net/http"
 	"strconv"

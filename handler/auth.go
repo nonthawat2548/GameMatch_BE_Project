@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"github.com/jackc/pgx/v5"
 	"errors"
 	"gamematch/auth"
+	"github.com/jackc/pgx/v5"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -24,6 +24,15 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 	b.Username = strings.TrimSpace(b.Username)
 	b.Name = strings.TrimSpace(b.Name)
 	if b.Username == "" && b.Email != "" {
+		b.Username = b.Email
+	}
+	// An email-shaped username may only be the account's own email.
+	// Plain usernames remain available for existing username login clients.
+	if strings.Contains(b.Username, "@") {
+		if !strings.EqualFold(b.Username, b.Email) {
+			fail(w, 400, "ชื่อผู้ใช้ต้องไม่เป็นอีเมลของบัญชีอื่น")
+			return
+		}
 		b.Username = b.Email
 	}
 	address, e := mail.ParseAddress(b.Email)

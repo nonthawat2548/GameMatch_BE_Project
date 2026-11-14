@@ -1,38 +1,28 @@
 package handler
 
 import (
-	"gamematch/store"
 	"net/http"
 	"strconv"
-	"strings"
 )
 
 func (a *API) Games(w http.ResponseWriter, r *http.Request) {
-	g, e := a.S.Games(r.Context(), false)
+	g, e := a.S.SearchGames(r.Context(), r.URL.Query().Get("q"))
 	if e != nil {
 		dbError(w, e)
 		return
 	}
-	q := strings.ToLower(r.URL.Query().Get("q"))
-	out := []store.Game{}
-	for _, v := range g {
-		if strings.Contains(strings.ToLower(v.Title), q) {
-			out = append(out, v)
-		}
-	}
-	send(w, 200, out)
+	send(w, 200, g)
 }
 func (a *API) Detail(w http.ResponseWriter, r *http.Request) {
-	games, e := a.S.Games(r.Context(), false)
+	id, e := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if e != nil || id <= 0 {
+		fail(w, 400, "id ไม่ถูกต้อง")
+		return
+	}
+	g, e := a.S.PublishedGame(r.Context(), id)
 	if e != nil {
 		dbError(w, e)
 		return
 	}
-	for _, g := range games {
-		if strconv.FormatInt(g.ID, 10) == r.PathValue("id") {
-			send(w, 200, g)
-			return
-		}
-	}
-	fail(w, 404, "ไม่พบเกม")
+	send(w, 200, g)
 }

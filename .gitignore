@@ -4,9 +4,11 @@ coverage/
 .env
 .env.*
 !.env.example
+.jwt_secret
 *.exe
 server
 .DS_Store
 .tools/
 .cache/
 .vercel/
+supabase/.temp/

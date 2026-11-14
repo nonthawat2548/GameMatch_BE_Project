@@ -4,12 +4,16 @@ import "context"
 
 func (s *Store) FavoriteIDs(ctx context.Context, memberID int64) (map[int64]bool, error) {
 	rows, err := s.DB.Query(ctx, `SELECT game_id FROM gm_favorites WHERE member_id=$1`, memberID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	ids := map[int64]bool{}
 	for rows.Next() {
 		var id int64
-		if err = rows.Scan(&id); err != nil { return nil, err }
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
 		ids[id] = true
 	}
 	return ids, rows.Err()
